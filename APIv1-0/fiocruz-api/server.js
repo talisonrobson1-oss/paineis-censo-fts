@@ -55,9 +55,46 @@ setInterval(() => {
 app.use(cors());
 app.use(express.json());
 
-// Middleware de logging
+// ==========================================
+// MONITORAMENTO — contadores em memória
+// ==========================================
+const API_STATS = {
+  startedAt: new Date().toISOString(),
+  totalRequests: 0,
+  totalErrors: 0,
+  endpoints: {}        // { [path]: { calls, errors, totalMs, lastCalledAt } }
+};
+
+// Middleware de logging + coleta de métricas
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  // Ignorar health check no contador para não poluir
+  const track = req.path !== '/health';
+  const startMs = Date.now();
+
+  res.on('finish', () => {
+    const ms = Date.now() - startMs;
+    const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket.remoteAddress || '-';
+    const status = res.statusCode;
+    const isError = status >= 400;
+
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} | ${status} | ${ms}ms | ${ip}`);
+
+    if (track) {
+      API_STATS.totalRequests++;
+      if (isError) API_STATS.totalErrors++;
+
+      const key = req.path;
+      if (!API_STATS.endpoints[key]) {
+        API_STATS.endpoints[key] = { calls: 0, errors: 0, totalMs: 0, lastCalledAt: null };
+      }
+      const ep = API_STATS.endpoints[key];
+      ep.calls++;
+      ep.totalMs += ms;
+      if (isError) ep.errors++;
+      ep.lastCalledAt = new Date().toISOString();
+    }
+  });
+
   next();
 });
 
@@ -1846,6 +1883,54 @@ app.get('/', (req, res) => {
         '/': 'Esta documentação'
       }
     }
+  });
+});
+
+/**
+ * GET /api/admin/stats
+ * Métricas de uso da API (contadores em memória — resetam ao reiniciar)
+ */
+app.get('/api/admin/stats', (req, res) => {
+  const uptimeSec = Math.floor(process.uptime());
+  const uptimeStr = `${Math.floor(uptimeSec / 3600)}h ${Math.floor((uptimeSec % 3600) / 60)}m ${uptimeSec % 60}s`;
+
+  // Enriquecer endpoints com avg_ms e taxa de erro
+  const endpoints = {};
+  for (const [path, ep] of Object.entries(API_STATS.endpoints)) {
+    endpoints[path] = {
+      calls: ep.calls,
+      errors: ep.errors,
+      error_rate: ep.calls > 0 ? ((ep.errors / ep.calls) * 100).toFixed(1) + '%' : '0%',
+      avg_ms: ep.calls > 0 ? Math.round(ep.totalMs / ep.calls) : 0,
+      last_called_at: ep.lastCalledAt
+    };
+  }
+
+  // Ordenar por número de chamadas (mais usado primeiro)
+  const endpointsSorted = Object.fromEntries(
+    Object.entries(endpoints).sort(([, a], [, b]) => b.calls - a.calls)
+  );
+
+  res.json({
+    server: {
+      started_at: API_STATS.startedAt,
+      uptime: uptimeStr,
+      node_version: process.version,
+      memory_mb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
+    },
+    requests: {
+      total: API_STATS.totalRequests,
+      errors: API_STATS.totalErrors,
+      error_rate: API_STATS.totalRequests > 0
+        ? ((API_STATS.totalErrors / API_STATS.totalRequests) * 100).toFixed(1) + '%'
+        : '0%'
+    },
+    pool: {
+      total_connections: pool.totalCount,
+      idle: pool.idleCount,
+      waiting: pool.waitingCount
+    },
+    endpoints: endpointsSorted
   });
 });
 
