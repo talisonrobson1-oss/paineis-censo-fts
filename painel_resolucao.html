@@ -1,0 +1,1405 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <script src="api-config.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FioCruz — Painel de Resolução de Divergências</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- Select2 para autocomplete nos filtros -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<style>
+
+/* LOADING STATE */
+.loading-overlay{
+  position:fixed;
+  top:0;left:0;right:0;bottom:0;
+  background:rgba(13,17,23,0.95);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:9999;
+  flex-direction:column;
+}
+.loading-spinner{
+  width:50px;height:50px;
+  border:4px solid #30363d;
+  border-top-color:#58a6ff;
+  border-radius:50%;
+  animation:spin 0.8s linear infinite;
+}
+@keyframes spin{ to{transform:rotate(360deg);} }
+.loading-text{
+  color:#8b949e;
+  margin-top:16px;
+  font-family:'Sora',sans-serif;
+  font-size:14px;
+}
+
+/* THEME — Paleta institucional Censo FTS */
+:root{
+  --bg:#0c1a2e;           /* navy profundo — fundo geral */
+  --surface:#152338;      /* navy escuro — cartões e painéis */
+  --surface2:#1a2d4a;     /* navy médio — hover e inputs */
+  --border:#2a4270;       /* borda navy */
+  --text:#dce8f4;         /* branco azulado — texto principal */
+  --muted:#7a9ab8;        /* cinza-azul — texto secundário */
+  --blue:#4a90e2;         /* azul logo — destaque primário */
+  --green:#3fb950;        /* verde — resolvidas/sucesso */
+  --yellow:#f0c040;       /* amarelo — pendentes/alerta */
+  --red:#f85149;          /* vermelho — erros */
+  --purple:#9b59b6;       /* roxo logo — taxa/percentual */
+  --orange:#ff8c42;       /* laranja — ocupações pendentes */
+  --pink:#d946a6;         /* rosa logo — estabelecimentos */
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Sora',sans-serif;
+  font-size:14px;
+  line-height:1.6;
+  min-height:100vh;
+}
+
+/* HEADER */
+header{
+  background: linear-gradient(135deg, #0c1a2e 0%, #1a365d 100%);
+  border-bottom: 3px solid;
+  border-image: linear-gradient(90deg, var(--blue), var(--pink)) 1;
+  padding:14px 32px;
+  display:flex;
+  align-items:center;
+  gap:18px;
+  position:sticky;
+  top:0;
+  z-index:100;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+.hdr-logo{flex-shrink:0;}
+.hdr-logo img{height:52px;width:auto;object-fit:contain;filter:brightness(1.05);}
+.hdr-title h1{font-size:17px;font-weight:700;color:var(--text);letter-spacing:.3px;}
+.hdr-title p{font-size:11px;color:var(--muted);margin-top:3px;}
+.hdr-meta{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);text-align:right;line-height:1.8;margin-left:auto;}
+
+/* FILTERS */
+.fbar{background:var(--surface2);border-bottom:1px solid var(--border);padding:14px 32px;display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;}
+.filter-section{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;flex:1;min-width:400px;}
+.filter-section-title{font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--blue);padding-bottom:6px;border-bottom:1px solid var(--border);}
+.filter-section-content{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-top:4px;}
+.fg{display:flex;flex-direction:column;gap:4px;}
+.fg label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);}
+select,input.finput{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-family:'Sora',sans-serif;font-size:13px;cursor:pointer;width:100%;outline:none;transition:border-color .2s;}
+select:focus,input.finput:focus{border-color:var(--blue);}
+.btn{background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;font-family:'Sora',sans-serif;font-size:12px;cursor:pointer;transition:all .2s;}
+.btn:hover{border-color:var(--blue);color:var(--blue);}
+.filter-note{font-size:11px;color:var(--muted);align-self:flex-end;padding-bottom:8px;font-style:italic;}
+
+/* SELECT2 CUSTOMIZATION */
+.select2-container--default .select2-selection--single {
+  background-color: var(--surface) !important;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  height: 36px;
+  padding: 6px 12px;
+}
+.select2-container--default .select2-selection--single .select2-selection__rendered {
+  color: var(--text);
+  line-height: 24px;
+  padding: 0;
+}
+.select2-container--default .select2-selection--single .select2-selection__arrow {
+  height: 34px;
+}
+.select2-dropdown {
+  background-color: var(--surface) !important;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.select2-container--default .select2-results__option {
+  color: var(--text);
+  padding: 8px 12px;
+  background-color: var(--surface);
+}
+.select2-container--default .select2-results__option--highlighted[aria-selected] {
+  background-color: var(--purple) !important;
+  color: white;
+}
+.select2-container--default .select2-search--dropdown .select2-search__field {
+  background-color: var(--surface) !important;
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px;
+  border-radius: 4px;
+}
+.select2-container {
+  width: 100% !important;
+}
+.select2-results {
+  background-color: var(--surface);
+}
+.select2-results__options {
+  background-color: var(--surface);
+}
+
+/* MAIN */
+main{padding:24px 32px;max-width:1600px;margin:0 auto;}
+.sec-label{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+.sec-label::after{content:'';flex:1;height:1px;background:var(--border);}
+
+/* KPI */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:28px;}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;position:relative;overflow:hidden;transition:border-color .2s;}
+.kpi:hover{border-color:var(--blue);}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--ca,var(--blue));}
+.kpi-lbl{font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+.kpi-val{font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:700;color:var(--ca,var(--blue));line-height:1;}
+.kpi-sub{font-size:11px;color:var(--muted);margin-top:4px;}
+
+/* CHARTS */
+.cgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px;}
+.ccard{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;}
+.ccard.wide{grid-column:span 2;}
+.ctitle{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:16px;display:flex;align-items:center;gap:6px;}
+.ctitle span{width:6px;height:6px;border-radius:50%;background:var(--blue);display:inline-block;}
+.cwrap{position:relative;height:280px;}
+.cwrap.tall{height:360px;}
+
+/* TABLE */
+.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:40px;}
+.tbl-hdr{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.tbl-hdr h3{font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);}
+.search-inp{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:6px;font-family:'Sora',sans-serif;font-size:13px;width:280px;outline:none;}
+.search-inp:focus{border-color:var(--blue);}
+.tbl-scroll{overflow-x:auto;max-height:600px;}
+table{width:100%;border-collapse:collapse;}
+thead{position:sticky;top:0;background:var(--surface);z-index:10;}
+th{padding:12px 16px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);border-bottom:2px solid var(--border);cursor:pointer;user-select:none;}
+th:hover{color:var(--blue);}
+td{padding:12px 16px;font-size:12px;border-bottom:1px solid var(--border);font-family:'JetBrains Mono',monospace;}
+tr:hover{background:var(--surface2);}
+.pag{padding:14px 20px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--border);}
+.pag-btns{display:flex;gap:6px;}
+.pag-btn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px;transition:all .2s;}
+.pag-btn:hover:not(:disabled){border-color:var(--blue);color:var(--blue);}
+.pag-btn:disabled{opacity:0.5;cursor:not-allowed;}
+.pag-info{font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;}
+
+/* STATUS BADGE */
+.badge{display:inline-block;padding:4px 8px;border-radius:4px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;}
+.badge-success{background:rgba(63,185,80,0.15);color:#3fb950;}
+.badge-warning{background:rgba(210,153,34,0.15);color:#d29922;}
+
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loading">
+  <div class="loading-spinner"></div>
+  <div class="loading-text" id="loading-text">Carregando...</div>
+</div>
+
+<header>
+  <div class="hdr-logo">
+    <img src="1775430942711_image.png" alt="Censo FTS — FioCruz">
+  </div>
+  <div class="hdr-title">
+    <h1>Resolução de Divergências</h1>
+    <p>Acompanhamento de Divergências entre Recenseamento e Espelho CNES</p>
+  </div>
+  <div class="hdr-meta" id="hdr-meta"></div>
+</header>
+
+<div class="fbar">
+  <!-- Filtros Temporais -->
+  <div class="filter-section">
+    <div class="filter-section-title">Período de Análise</div>
+    <div class="filter-section-content">
+      <div class="fg">
+        <label>Competência de Comparação</label>
+        <select id="f-comp">
+          <option value="">Todas (Série Histórica)</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Tipo de Operação</label>
+        <select id="f-op">
+          <option value="">Todos</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filtros Geográficos -->
+  <div class="filter-section">
+    <div class="filter-section-title">Localização</div>
+    <div class="filter-section-content">
+      <div class="fg">
+        <label>UF</label>
+        <select id="f-uf">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Macrorregião de Saúde</label>
+        <select id="f-macro">
+          <option value="">Todas</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Região de Saúde</label>
+        <select id="f-regional">
+          <option value="">Todas</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Município</label>
+        <select id="f-municipio">
+          <option value="">Todos</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filtros Profissionais -->
+  <div class="filter-section">
+    <div class="filter-section-title">Dados Profissionais</div>
+    <div class="filter-section-content">
+      <div class="fg">
+        <label>Ocupação (CBO)</label>
+        <select id="f-cbo">
+          <option value="">Todas</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Estabelecimento</label>
+        <select id="f-estabelecimento">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Recenseador</label>
+        <select id="f-recenseador">
+          <option value="">Todos</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ações -->
+  <div style="display:flex;flex-direction:column;gap:8px;align-self:flex-end;padding-bottom:8px;">
+    <button class="btn" onclick="resetFilters()">↺ Limpar Filtros</button>
+  </div>
+</div>
+
+<main>
+  <!-- KPIs -->
+  <div class="sec-label">Indicadores Principais</div>
+  <div class="kpi-grid">
+    <div class="kpi" style="--ca:var(--blue)">
+      <div class="kpi-lbl">Total de Divergências</div>
+      <div class="kpi-val" id="kpi-total">—</div>
+      <div class="kpi-sub">vínculos com st_cnes = 'N'</div>
+    </div>
+    <div class="kpi" style="--ca:var(--green)">
+      <div class="kpi-lbl">Divergências Resolvidas</div>
+      <div class="kpi-val" id="kpi-resolvidas">—</div>
+      <div class="kpi-sub" id="kpi-resolvidas-sub"></div>
+    </div>
+    <div class="kpi" style="--ca:var(--yellow)">
+      <div class="kpi-lbl">Divergências Pendentes</div>
+      <div class="kpi-val" id="kpi-pendentes">—</div>
+      <div class="kpi-sub" id="kpi-pendentes-sub"></div>
+    </div>
+    <div class="kpi" style="--ca:var(--purple)">
+      <div class="kpi-lbl">Taxa de Resolução</div>
+      <div class="kpi-val" id="kpi-taxa">—</div>
+      <div class="kpi-sub">vínculos resolvidos</div>
+    </div>
+  </div>
+
+  <!-- Gráficos -->
+  <div class="sec-label">Análise de Divergências</div>
+  <div class="cgrid">
+    <div class="ccard wide">
+      <div class="ctitle"><span style="background:var(--blue)"></span> Evolução por Competência</div>
+      <div class="cwrap"><canvas id="c-evolucao"></canvas></div>
+    </div>
+    <div class="ccard">
+      <div class="ctitle"><span style="background:var(--green)"></span> Evolução Acumulada</div>
+      <div class="cwrap"><canvas id="c-evolucao-acumulada"></canvas></div>
+    </div>
+    <div class="ccard">
+      <div class="ctitle"><span style="background:var(--purple)"></span> Taxa de Resolução por Tipo</div>
+      <div class="cwrap"><canvas id="c-taxa"></canvas></div>
+    </div>
+    <div class="ccard">
+      <div class="ctitle"><span style="background:var(--yellow)"></span> Top 10 Ocupações com Divergências</div>
+      <div class="cwrap tall"><canvas id="c-cbo"></canvas></div>
+    </div>
+    <div class="ccard">
+      <div class="ctitle"><span style="background:var(--red)"></span> Top 10 Estabelecimentos com Divergências</div>
+      <div class="cwrap tall"><canvas id="c-cnes"></canvas></div>
+    </div>
+    <div class="ccard">
+      <div class="ctitle"><span style="background:var(--orange)"></span> Top 10 Ocupações com Menor Taxa de Resolução</div>
+      <div class="cwrap tall"><canvas id="c-cbo-pendentes"></canvas></div>
+    </div>
+    <div class="ccard">
+      <div class="ctitle"><span style="background:var(--pink)"></span> Top 10 Estabelecimentos com Menor Taxa de Resolução</div>
+      <div class="cwrap tall"><canvas id="c-cnes-pendentes"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="sec-label">Registros de Divergências</div>
+  <div class="tbl-wrap">
+    <div class="tbl-hdr">
+      <h3>Divergências <span id="tbl-count" style="color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;margin-left:8px"></span></h3>
+      <input class="search-inp" id="tbl-search" placeholder="Buscar..." oninput="renderTable()">
+    </div>
+    <div class="tbl-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="srt(0)">CPF ↕</th>
+            <th onclick="srt(1)">CNES ↕</th>
+            <th onclick="srt(2)">Estabelecimento ↕</th>
+            <th onclick="srt(3)">CBO ↕</th>
+            <th onclick="srt(4)">Vínculo ↕</th>
+            <th onclick="srt(5)">Operação ↕</th>
+            <th onclick="srt(6)">UF ↕</th>
+            <th onclick="srt(7)">Município ↕</th>
+            <th onclick="srt(8)">Status ↕</th>
+          </tr>
+        </thead>
+        <tbody id="tbl-body"></tbody>
+      </table>
+    </div>
+    <div class="pag">
+      <span id="pag-info"></span>
+      <div class="pag-btns">
+        <button class="pag-btn" id="pag-prev" onclick="changePage(-1)">← Anterior</button>
+        <button class="pag-btn" id="pag-next" onclick="changePage(1)">Próxima →</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ==========================================
+// GLOBALS
+// ==========================================
+let D = {}; // Data object
+const CH = {}; // Charts
+let rawTable = [];
+let filteredTable = [];
+let page = 1;
+const PG = 30;
+let sortCol = 0;
+let sortDir = 1;
+let filterDebounce = null; // Debounce para evitar múltiplas requisições ao trocar filtros
+const activeFilters = {
+  comp: '',
+  op: '',
+  uf: '',
+  macro: '',
+  regional: '',
+  municipio: '',
+  cbo: '',
+  estabelecimento: '',
+  recenseador: ''
+};
+
+// ==========================================
+// LOADING
+// ==========================================
+function showLoading(text='Carregando...'){
+  document.getElementById('loading').style.display='flex';
+  document.getElementById('loading-text').textContent=text;
+}
+function hideLoading(){
+  document.getElementById('loading').style.display='none';
+}
+
+// ==========================================
+// HEALTH CHECK
+// ==========================================
+async function checkApiHealth() {
+  try {
+    const response = await apiRequest(API_CONFIG.ENDPOINTS.HEALTH);
+    if (response.success && response.data.status === 'ok') {
+      console.log('✅ API está online');
+      return true;
+    }
+    console.error('❌ API retornou status inválido:', response);
+    return false;
+  } catch (error) {
+    console.error('❌ Erro ao verificar health da API:', error);
+    return false;
+  }
+}
+
+// ==========================================
+// LOAD DATA
+// ==========================================
+async function loadDataFromAPI() {
+  try {
+    showLoading('Verificando API...');
+    
+    const isOnline = await checkApiHealth();
+    if (!isOnline) {
+      throw new Error('API não está respondendo');
+    }
+    
+    showLoading('Carregando dados de resolução...');
+    
+    // Carregar dados em paralelo
+    const [statsRes, agregadosRes, filtrosRes] = await Promise.all([
+      apiRequest(API_CONFIG.ENDPOINTS.RESOLUCAO_STATS),
+      apiRequest(API_CONFIG.ENDPOINTS.RESOLUCAO_AGREGADOS),
+      apiRequest(API_CONFIG.ENDPOINTS.RESOLUCAO_FILTROS)
+    ]);
+    
+    if (!statsRes.success) throw new Error(statsRes.error || 'Erro ao carregar estatísticas');
+    if (!agregadosRes.success) throw new Error(agregadosRes.error || 'Erro ao carregar dados agregados');
+    if (!filtrosRes.success) throw new Error(filtrosRes.error || 'Erro ao carregar filtros');
+    
+    showLoading('Processando dados...');
+    
+    // Transformar arrays em objetos
+    const data = agregadosRes.data;
+    
+    D = {
+      stats: statsRes.data,
+      evolucao: data.evolucao || [],
+      tipo: {},
+      cbo: {},
+      estabelecimentos: {},
+      competencias: statsRes.data.competencias || []
+    };
+    
+    // Transformar tipo
+    if (data.tipo) {
+      data.tipo.forEach(r => { 
+        D.tipo[r.tipo] = {
+          total: parseInt(r.total),
+          resolvidas: parseInt(r.resolvidas),
+          pendentes: parseInt(r.total) - parseInt(r.resolvidas)
+        };
+      });
+    }
+    
+    // Transformar CBO
+    if (data.cbo) {
+      data.cbo.forEach(r => { 
+        D.cbo[r.cbo] = {
+          total: parseInt(r.total),
+          resolvidas: parseInt(r.resolvidas),
+          pendentes: parseInt(r.total) - parseInt(r.resolvidas)
+        };
+      });
+    }
+    
+    // Transformar Estabelecimentos
+    if (data.estabelecimentos) {
+      data.estabelecimentos.forEach(r => { 
+        const key = r.estabelecimento || r.co_cnes;
+        D.estabelecimentos[key] = {
+          total: parseInt(r.total),
+          resolvidas: parseInt(r.resolvidas),
+          pendentes: parseInt(r.total) - parseInt(r.resolvidas)
+        };
+      });
+    }
+    
+    // Arrays de pendentes (direto, não transformar em objeto)
+    D.cbo_pendentes = data.cbo_pendentes || [];
+    D.estabelecimentos_pendentes = data.estabelecimentos_pendentes || [];
+    
+    // Evolução e Evolução Acumulada (arrays diretos)
+    D.evolucao = data.evolucao || [];
+    D.evolucao_acumulada = data.evolucao_acumulada || [];
+    
+    console.log('✅ Dados transformados:', {
+      tipo: Object.keys(D.tipo).length + ' tipos',
+      cbo: Object.keys(D.cbo).length + ' ocupações',
+      estabelecimentos: Object.keys(D.estabelecimentos).length + ' estabelecimentos',
+      evolucao: D.evolucao.length + ' competências',
+      evolucao_acumulada: D.evolucao_acumulada.length + ' competências',
+      cboPendentes: D.cbo_pendentes.length,
+      estabelecimentosPendentes: D.estabelecimentos_pendentes.length
+    });
+    
+    // Popular filtros
+    populateFilters(filtrosRes.data);
+    
+    // Definir competência mais recente como padrão
+    // Backend retorna em DESC, então [0] é a mais recente
+    if (D.competencias && D.competencias.length > 0) {
+      console.log('📅 Competências disponíveis (do backend):', D.competencias);
+      console.log('📅 Filtros recebidos:', filtrosRes.data.competencias);
+      
+      const maisRecente = D.competencias[0]; // PRIMEIRA = mais recente (vem DESC do backend)
+      console.log('📅 Competência mais recente (padrão) que será selecionada:', maisRecente);
+      
+      activeFilters.comp = maisRecente;
+      
+      // Aguardar Select2 estar pronto
+      setTimeout(async () => {
+        const $select = $('#f-comp');
+        $select.val(maisRecente).trigger('change.select2');
+        
+        const valorSelecionado = $select.val();
+        console.log('✅ Competência definida no select:', valorSelecionado);
+        console.log('✅ Era esperado:', maisRecente);
+        console.log('✅ Match?', valorSelecionado === maisRecente);
+        
+        // Recarregar com essa competência
+        await reloadWithFilters();
+        await loadTableData(1);
+      }, 300);
+    }
+    
+    // Atualizar header
+    const totalComp = D.competencias.length;
+    document.getElementById('hdr-meta').innerHTML =
+      `Base: Abril/2025<br>` +
+      `Competências de comparação: ${totalComp}<br>` +
+      `Período: ${D.competencias[0]} a ${D.competencias[totalComp-1]}`;
+    
+    showLoading('Carregando tabela...');
+    
+    // Carregar primeira página da tabela
+    await loadTableData(1);
+    
+    hideLoading();
+    
+    // Inicializar painel
+    initializePainel();
+    
+    console.log('✅ Painel de resolução carregado com sucesso');
+    
+  } catch (error) {
+    console.error('❌ Erro ao carregar dados:', error);
+    hideLoading();
+    alert('Erro ao carregar painel: ' + error.message);
+  }
+}
+
+// ==========================================
+// LOAD TABLE DATA
+// ==========================================
+async function loadTableData(pageNum) {
+  try {
+    page = pageNum;
+    
+    // Construir filtros
+    const filters = {
+      page,
+      limit: PG,
+      ...activeFilters
+    };
+    
+    console.log('📋 Carregando tabela com filtros:', filters);
+    
+    const res = await apiRequest(API_CONFIG.ENDPOINTS.RESOLUCAO_TABELA, filters);
+    
+    if (!res.success) {
+      throw new Error(res.error || 'Erro ao carregar tabela');
+    }
+    
+    rawTable = res.data.data || [];
+    filteredTable = [...rawTable];
+    
+    console.log(`✅ Tabela carregada: ${rawTable.length} registros (total: ${res.data.total})`);
+    
+    // Atualizar info de paginação
+    document.getElementById('pag-info').textContent = 
+      `Página ${res.data.page} de ${res.data.totalPages} (${res.data.total.toLocaleString('pt-BR')} registros)`;
+    
+    // Habilitar/desabilitar botões
+    document.getElementById('pag-prev').disabled = res.data.page === 1;
+    document.getElementById('pag-next').disabled = res.data.page === res.data.totalPages;
+    
+    renderTable();
+    
+  } catch (error) {
+    console.error('❌ Erro ao carregar tabela:', error);
+  }
+}
+
+// ==========================================
+// POPULATE FILTERS
+// ==========================================
+function populateFilters(data) {
+  // Competências (com opção "Todas")
+  const compSelect = document.getElementById('f-comp');
+  if (data.competencias && data.competencias.length > 0) {
+    // Backend já envia em ordem DESC (mais recente primeiro)
+    // Manter essa ordem para mostrar Nov, Out, Set, Ago
+    data.competencias.forEach(item => {
+      const o = document.createElement('option');
+      o.value = item.codigo;
+      o.textContent = item.valor;
+      compSelect.appendChild(o);
+    });
+  }
+  
+  // Operações
+  pop('f-op', data.operacoes || []);
+  
+  // UF
+  pop('f-uf', data.uf || []);
+  
+  // Recenseador
+  pop('f-recenseador', data.recenseador || []);
+  
+  // Filtros com código + descrição
+  popWithSearch('f-macro', data.macro || []);
+  popWithSearch('f-regional', data.regional || []);
+  popWithSearch('f-municipio', data.municipio || []);
+  popWithSearch('f-cbo', data.cbo || []);
+  popWithSearch('f-estabelecimento', data.estabelecimentos || []);
+  
+  console.log('✅ Filtros populados:', data);
+  
+  // Inicializar Select2
+  initializeSelect2();
+}
+
+function pop(id, vals) {
+  const s = document.getElementById(id);
+  if (!s) return;
+  while (s.options.length > 1) s.remove(1);
+  vals.forEach(v => { 
+    const o = document.createElement('option'); 
+    o.value = o.textContent = v; 
+    s.appendChild(o); 
+  });
+}
+
+function popWithSearch(id, items) {
+  const s = document.getElementById(id);
+  if (!s) return;
+  
+  while (s.options.length > 1) s.remove(1);
+  
+  items.forEach(item => {
+    const o = document.createElement('option');
+    o.value = item.codigo;
+    o.textContent = item.valor;
+    s.appendChild(o);
+  });
+}
+
+function initializeSelect2() {
+  const filterIds = ['f-comp', 'f-op', 'f-uf', 'f-macro', 'f-regional', 'f-municipio', 'f-cbo', 'f-estabelecimento', 'f-recenseador'];
+  
+  filterIds.forEach(id => {
+    const $select = $('#' + id);
+    if ($select.length) {
+      if ($select.data('select2')) {
+        $select.select2('destroy');
+      }
+      
+      $select.select2({
+        placeholder: 'Selecione...',
+        allowClear: true,
+        width: '100%',
+        language: {
+          noResults: function() {
+            return "Nenhum resultado encontrado";
+          },
+          searching: function() {
+            return "Buscando...";
+          }
+        }
+      });
+    }
+  });
+  
+  console.log('✅ Select2 inicializado');
+}
+
+// ==========================================
+// INITIALIZE PANEL
+// ==========================================
+function initializePainel() {
+  // Event listeners para filtros
+  ['f-comp', 'f-op', 'f-uf', 'f-macro', 'f-regional', 'f-municipio', 'f-cbo', 'f-estabelecimento', 'f-recenseador'].forEach(id => {
+    const $elem = $('#' + id);
+    if ($elem.length) {
+      $elem.on('select2:select select2:clear change', function() {
+        const value = $(this).val() || '';
+        activeFilters[id.replace('f-', '')] = value;
+
+        console.log(`🔄 Filtro ${id} alterado para: ${value}`);
+
+        // Debounce: aguarda 400ms após última alteração antes de disparar requisição
+        if (filterDebounce) clearTimeout(filterDebounce);
+        filterDebounce = setTimeout(async () => {
+          await reloadWithFilters();
+          await loadTableData(1);
+        }, 400);
+      });
+    }
+  });
+  
+  // Renderizar
+  updateKPIs();
+  renderCharts();
+  
+  console.log('✅ Painel inicializado');
+}
+
+// ==========================================
+// RELOAD WITH FILTERS
+// ==========================================
+async function reloadWithFilters() {
+  try {
+    showLoading('Aplicando filtros...');
+    
+    const filters = { ...activeFilters };
+    
+    console.log('📊 Filtros aplicados:', filters);
+    
+    // Executar sequencialmente para não sobrecarregar o banco com conexões paralelas
+    const statsRes = await apiRequest(API_CONFIG.ENDPOINTS.RESOLUCAO_STATS, filters);
+    if (!statsRes.success) {
+      throw new Error('Erro ao carregar estatísticas: ' + (statsRes.error || 'falha desconhecida'));
+    }
+
+    const agregadosRes = await apiRequest(API_CONFIG.ENDPOINTS.RESOLUCAO_AGREGADOS, filters);
+    if (!agregadosRes.success) {
+      throw new Error('Erro ao carregar gráficos: ' + (agregadosRes.error || 'falha desconhecida'));
+    }
+    
+    console.log('✅ Stats recebidos:', statsRes.data);
+    console.log('✅ Agregados recebidos:', agregadosRes.data);
+    
+    if (statsRes.success) {
+      D.stats = statsRes.data;
+    }
+    
+    if (agregadosRes.success) {
+      const data = agregadosRes.data;
+      D.evolucao = data.evolucao || [];
+      D.evolucao_acumulada = data.evolucao_acumulada || [];
+      D.tipo = {};
+      D.cbo = {};
+      D.estabelecimentos = {};
+      
+      // Transformar tipo
+      if (data.tipo) {
+        data.tipo.forEach(r => { 
+          D.tipo[r.tipo] = {
+            total: parseInt(r.total),
+            resolvidas: parseInt(r.resolvidas),
+            pendentes: parseInt(r.total) - parseInt(r.resolvidas)
+          };
+        });
+      }
+      
+      // Transformar CBO
+      if (data.cbo) {
+        data.cbo.forEach(r => { 
+          D.cbo[r.cbo] = {
+            total: parseInt(r.total),
+            resolvidas: parseInt(r.resolvidas),
+            pendentes: parseInt(r.total) - parseInt(r.resolvidas)
+          };
+        });
+      }
+      
+      // Transformar Estabelecimentos
+      if (data.estabelecimentos) {
+        data.estabelecimentos.forEach(r => { 
+          const key = r.estabelecimento || r.co_cnes;
+          D.estabelecimentos[key] = {
+            total: parseInt(r.total),
+            resolvidas: parseInt(r.resolvidas),
+            pendentes: parseInt(r.total) - parseInt(r.resolvidas),
+            co_cnes: r.co_cnes
+          };
+        });
+      }
+      
+      // Arrays de pendentes
+      D.cbo_pendentes = data.cbo_pendentes || [];
+      D.estabelecimentos_pendentes = data.estabelecimentos_pendentes || [];
+    }
+    
+    console.log('🎨 Atualizando KPIs e gráficos...');
+    updateKPIs();
+    renderCharts();
+    
+    hideLoading();
+    
+    console.log('✅ Dados atualizados com filtros!');
+    
+  } catch (error) {
+    console.error('❌ Erro ao aplicar filtros:', error);
+    hideLoading();
+    alert('Erro ao aplicar filtros: ' + error.message + '\n\nVerifique se o servidor está online e tente novamente.');
+  }
+}
+
+// ==========================================
+// RESET FILTERS
+// ==========================================
+function resetFilters() {
+  Object.keys(activeFilters).forEach(k => activeFilters[k] = '');
+  
+  ['f-comp', 'f-op', 'f-uf', 'f-macro', 'f-regional', 'f-municipio', 'f-cbo', 'f-estabelecimento', 'f-recenseador'].forEach(id => {
+    const $elem = $('#' + id);
+    if ($elem.length && $elem.data('select2')) {
+      $elem.val('').trigger('change');
+    } else {
+      const elem = document.getElementById(id);
+      if (elem) elem.value = '';
+    }
+  });
+  
+  reloadWithFilters();
+  loadTableData(1);
+}
+
+// ==========================================
+// UPDATE KPIs
+// ==========================================
+function updateKPIs() {
+  if (!D.stats) return;
+  
+  const fmt = n => (n || 0).toLocaleString('pt-BR');
+  
+  document.getElementById('kpi-total').textContent = fmt(D.stats.total_divergencias);
+  document.getElementById('kpi-resolvidas').textContent = fmt(D.stats.divergencias_resolvidas);
+  document.getElementById('kpi-resolvidas-sub').textContent = `${D.stats.taxa_resolucao}% do total`;
+  document.getElementById('kpi-pendentes').textContent = fmt(D.stats.divergencias_pendentes);
+  
+  const pctPendentes = (100 - D.stats.taxa_resolucao).toFixed(1);
+  document.getElementById('kpi-pendentes-sub').textContent = `${pctPendentes}% do total`;
+  document.getElementById('kpi-taxa').textContent = `${D.stats.taxa_resolucao}%`;
+  
+  console.log('✅ KPIs atualizados');
+}
+
+// ==========================================
+// RENDER CHARTS
+// ==========================================
+function destroyChart(id) { if (CH[id]) { CH[id].destroy(); CH[id] = null; } }
+
+function renderCharts() {
+  if (!D) return;
+  
+  // 1. Evolução por Competência
+  {
+    // Filtrar apenas competências com valor (remover null/undefined)
+    const evolucaoFiltrada = D.evolucao.filter(r => r.competencia);
+    
+    // Se há competência selecionada, mostrar apenas até ela
+    const compSelecionada = activeFilters.comp;
+    let dadosEvolucao = evolucaoFiltrada;
+    
+    if (compSelecionada) {
+      dadosEvolucao = evolucaoFiltrada.filter(r => r.competencia <= compSelecionada);
+    }
+    
+    const labels = dadosEvolucao.map(r => {
+      const comp = r.competencia;
+      const mes = comp.slice(4, 6);
+      const ano = comp.slice(0, 4);
+      const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+      return `${meses[parseInt(mes)-1]}/${ano}`;
+    });
+    
+    const totals = dadosEvolucao.map(r => parseInt(r.total) || 0);
+    const resolvidas = dadosEvolucao.map(r => parseInt(r.resolvidas) || 0);
+    const pendentes = totals.map((t, i) => t - resolvidas[i]);
+    
+    destroyChart('evolucao');
+    CH['evolucao'] = new Chart(document.getElementById('c-evolucao'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Total',
+            data: totals,
+            borderColor: '#4a90e2',
+            backgroundColor: 'rgba(74,144,226,0.12)',
+            tension: 0.3,
+            fill: true
+          },
+          {
+            label: 'Resolvidas',
+            data: resolvidas,
+            borderColor: '#3fb950',
+            backgroundColor: 'rgba(63,185,80,0.12)',
+            tension: 0.3,
+            fill: true
+          },
+          {
+            label: 'Pendentes',
+            data: pendentes,
+            borderColor: '#f0c040',
+            backgroundColor: 'rgba(240,192,64,0.12)',
+            tension: 0.3,
+            fill: true
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: { color: '#7a9ab8', font: { size: 11 } }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: { color: '#7a9ab8' },
+            grid: { color: '#2a4270' }
+          },
+          x: {
+            ticks: { color: '#7a9ab8' },
+            grid: { color: '#2a4270' }
+          }
+        }
+      }
+    });
+  }
+  
+  // 2. Evolução Acumulada
+  {
+    console.log('📊 DEBUG Evolução Acumulada:', D.evolucao_acumulada);
+    const dados = (D.evolucao_acumulada || []).sort((a, b) => a.competencia.localeCompare(b.competencia));
+    console.log('📊 Dados processados:', dados);
+    const labels = dados.map(x => x.competencia);
+    const resolvidas = dados.map(x => parseInt(x.resolvidas_acumuladas) || 0);
+    const total = dados.length > 0 ? parseInt(dados[0].total) : 0;
+    console.log('📊 Labels:', labels);
+    console.log('📊 Resolvidas:', resolvidas);
+    console.log('📊 Total:', total);
+    
+    destroyChart('evolucao-acumulada');
+    CH['evolucao-acumulada'] = new Chart(document.getElementById('c-evolucao-acumulada'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Resolvidas Acumuladas',
+            data: resolvidas,
+            borderColor: '#3fb950',
+            backgroundColor: 'rgba(63, 185, 80, 0.12)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 4,
+            pointHoverRadius: 6
+          },
+          {
+            label: 'Total de Divergências',
+            data: Array(labels.length).fill(total),
+            borderColor: '#4a90e2',
+            borderDash: [5, 5],
+            fill: false,
+            pointRadius: 0
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: { color: '#7a9ab8', font: { size: 11 } }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                const valor = context.parsed.y;
+                const pct = total > 0 ? ((valor / total) * 100).toFixed(1) : 0;
+                return `${context.dataset.label}: ${valor.toLocaleString('pt-BR')} (${pct}%)`;
+              }
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: { color: '#7a9ab8' },
+            grid: { color: '#2a4270' }
+          },
+          x: {
+            ticks: { color: '#7a9ab8' },
+            grid: { color: '#2a4270' }
+          }
+        }
+      }
+    });
+  }
+  
+  // 3. Taxa de Resolução por Tipo
+  {
+    const labels = Object.keys(D.tipo || {});
+    const total = labels.map(k => D.tipo[k].total);
+    const resolvidas = labels.map(k => D.tipo[k].resolvidas);
+    const pendentes = labels.map(k => D.tipo[k].pendentes);
+    
+    destroyChart('taxa');
+    CH['taxa'] = new Chart(document.getElementById('c-taxa'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Resolvidas',
+            data: resolvidas,
+            backgroundColor: '#3fb950'
+          },
+          {
+            label: 'Pendentes',
+            data: pendentes,
+            backgroundColor: '#d29922'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: { color: '#7a9ab8', font: { size: 11 } }
+          }
+        },
+        scales: {
+          x: {
+            stacked: true,
+            ticks: { color: '#7a9ab8' },
+            grid: { display: false }
+          },
+          y: {
+            stacked: true,
+            beginAtZero: true,
+            ticks: { color: '#7a9ab8' },
+            grid: { color: '#2a4270' }
+          }
+        }
+      }
+    });
+  }
+  
+  // 4. Top 10 CBO
+  {
+    const entries = Object.entries(D.cbo || {}).sort((a, b) => b[1].total - a[1].total);
+    const labels = entries.map(x => x[0].length > 35 ? x[0].slice(0, 33) + '…' : x[0]);
+    const totals = entries.map(x => x[1].total);
+    const resolvidas = entries.map(x => x[1].resolvidas);
+    
+    destroyChart('cbo');
+    CH['cbo'] = new Chart(document.getElementById('c-cbo'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Total',
+            data: totals,
+            backgroundColor: '#d29922'
+          },
+          {
+            label: 'Resolvidas',
+            data: resolvidas,
+            backgroundColor: '#3fb950'
+          }
+        ]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: { color: '#7a9ab8', font: { size: 10 } }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#7a9ab8', font: { size: 10 } },
+            grid: { color: '#2a4270' }
+          },
+          y: {
+            ticks: { color: '#7a9ab8', font: { size: 9 } },
+            grid: { color: '#2a4270' }
+          }
+        }
+      }
+    });
+  }
+  
+  // 5. Top 10 Estabelecimentos
+  {
+    const entries = Object.entries(D.estabelecimentos || {}).sort((a, b) => b[1].total - a[1].total);
+    const labels = entries.map(x => {
+      const nome = x[0];
+      const cnes = x[1].co_cnes || '';
+      const nomeAbrev = nome.length > 32 ? nome.slice(0, 30) + '…' : nome;
+      return cnes ? `${nomeAbrev} (${cnes})` : nomeAbrev;
+    });
+    const totals = entries.map(x => x[1].total);
+    const resolvidas = entries.map(x => x[1].resolvidas);
+
+    destroyChart('cnes');
+    CH['cnes'] = new Chart(document.getElementById('c-cnes'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Total',
+            data: totals,
+            backgroundColor: '#d946a6'
+          },
+          {
+            label: 'Resolvidas',
+            data: resolvidas,
+            backgroundColor: '#3fb950'
+          }
+        ]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: { color: '#7a9ab8', font: { size: 10 } }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#7a9ab8', font: { size: 10 } },
+            grid: { color: '#2a4270' }
+          },
+          y: {
+            ticks: { color: '#7a9ab8', font: { size: 9 } },
+            grid: { color: '#2a4270' }
+          }
+        }
+      }
+    });
+  }
+  
+  // 6. Top 10 CBO com MENOR taxa de resolução
+  {
+    const dados = (D.cbo_pendentes || []).slice(0, 10);
+    const labels = dados.map(x => {
+      const nome = x.cbo || '';
+      const taxa = parseFloat(x.taxa_resolucao) || 0;
+      return `${nome.length > 28 ? nome.slice(0, 26) + '…' : nome} (${taxa}%)`;
+    });
+    const resolvidas = dados.map(x => parseInt(x.resolvidas) || 0);
+    const pendentes = dados.map(x => parseInt(x.pendentes) || 0);
+    const total = dados.map(x => parseInt(x.total) || 0);
+    const taxas = dados.map(x => parseFloat(x.taxa_resolucao) || 0);
+    
+    destroyChart('cbo-pendentes');
+    CH['cbo-pendentes'] = new Chart(document.getElementById('c-cbo-pendentes'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Resolvidas',
+            data: resolvidas,
+            backgroundColor: '#3fb950'
+          },
+          {
+            label: 'Pendentes',
+            data: pendentes,
+            backgroundColor: '#ff8c42'
+          }
+        ]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: { color: '#7a9ab8', font: { size: 10 } }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                const index = context.dataIndex;
+                const tipo = context.dataset.label;
+                const valor = context.parsed.x;
+                return `${tipo}: ${valor} de ${total[index]} (${taxas[index]}%)`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            stacked: true,
+            beginAtZero: true,
+            ticks: { color: '#7a9ab8', font: { size: 10 } },
+            grid: { color: '#2a4270' }
+          },
+          y: {
+            stacked: true,
+            ticks: { color: '#7a9ab8', font: { size: 9 } },
+            grid: { color: '#2a4270' }
+          }
+        }
+      }
+    });
+  }
+  
+  // 7. Top 10 Estabelecimentos com MENOR taxa de resolução
+  {
+    const dados = (D.estabelecimentos_pendentes || []).slice(0, 10);
+    const labels = dados.map(x => {
+      const nome = x.estabelecimento || '';
+      const cnes = x.co_cnes || '';
+      const taxa = parseFloat(x.taxa_resolucao) || 0;
+      const nomeAbrev = nome.length > 22 ? nome.slice(0, 20) + '…' : nome;
+      const cnesStr = cnes ? ` (${cnes})` : '';
+      return `${nomeAbrev}${cnesStr} — ${taxa}%`;
+    });
+    const resolvidas = dados.map(x => parseInt(x.resolvidas) || 0);
+    const pendentes = dados.map(x => parseInt(x.pendentes) || 0);
+    const total = dados.map(x => parseInt(x.total) || 0);
+    const taxas = dados.map(x => parseFloat(x.taxa_resolucao) || 0);
+
+    destroyChart('cnes-pendentes');
+    CH['cnes-pendentes'] = new Chart(document.getElementById('c-cnes-pendentes'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Resolvidas',
+            data: resolvidas,
+            backgroundColor: '#3fb950'
+          },
+          {
+            label: 'Pendentes',
+            data: pendentes,
+            backgroundColor: '#9b59b6'
+          }
+        ]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: { color: '#7a9ab8', font: { size: 10 } }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                const index = context.dataIndex;
+                const tipo = context.dataset.label;
+                const valor = context.parsed.x;
+                return `${tipo}: ${valor} de ${total[index]} (${taxas[index]}%)`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            stacked: true,
+            beginAtZero: true,
+            ticks: { color: '#7a9ab8', font: { size: 10 } },
+            grid: { color: '#2a4270' }
+          },
+          y: {
+            stacked: true,
+            ticks: { color: '#7a9ab8', font: { size: 9 } },
+            grid: { color: '#2a4270' }
+          }
+        }
+      }
+    });
+  }
+  
+  console.log('✅ Gráficos renderizados (7 gráficos)');
+}
+
+// ==========================================
+// TABLE
+// ==========================================
+function renderTable() {
+  const total = filteredTable.length;
+  const start = (page - 1) * PG;
+  const end = start + PG;
+  const rows = filteredTable.slice(start, end);
+  
+  const tbody = document.getElementById('tbl-body');
+  tbody.innerHTML = '';
+  
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    const statusClass = r.status === 'Resolvida' ? 'badge-success' : 'badge-warning';
+    
+    tr.innerHTML = `
+      <td>${r.nu_cpf || '—'}</td>
+      <td>${r.co_cnes || '—'}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.no_razao_social || '—'}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.ds_cbo_ocupacao || '—'}</td>
+      <td>${r.vinculacao || '—'}</td>
+      <td>${r.no_tipo_operacao_censo || '—'}</td>
+      <td>${r.sg_uf || '—'}</td>
+      <td>${r.no_municipio || '—'}</td>
+      <td><span class="badge ${statusClass}">${r.status}</span></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  
+  document.getElementById('tbl-count').textContent = `(${total.toLocaleString('pt-BR')})`;
+}
+
+function changePage(delta) {
+  const newPage = page + delta;
+  loadTableData(newPage);
+}
+
+function srt(col) {
+  if (sortCol === col) {
+    sortDir *= -1;
+  } else {
+    sortCol = col;
+    sortDir = 1;
+  }
+  
+  filteredTable.sort((a, b) => {
+    const keys = ['nu_cpf', 'co_cnes', 'no_razao_social', 'ds_cbo_ocupacao', 'vinculacao', 'no_tipo_operacao_censo', 'sg_uf', 'no_municipio', 'status'];
+    const aVal = (a[keys[col]] || '').toString().toLowerCase();
+    const bVal = (b[keys[col]] || '').toString().toLowerCase();
+    return sortDir * (aVal < bVal ? -1 : aVal > bVal ? 1 : 0);
+  });
+  
+  renderTable();
+}
+
+// ==========================================
+// INIT
+// ==========================================
+window.addEventListener('DOMContentLoaded', () => {
+  console.log('🚀 Inicializando Painel de Resolução...');
+  loadDataFromAPI();
+});
+</script>
+
+</body>
+</html>

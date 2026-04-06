@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Censo da Força de Trabalho na Saúde - FioCruz</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      /* Paleta institucional Censo FTS */
+      --primary-dark: #1a365d;
+      --primary-blue: #4a90e2;
+      --primary-pink: #d946a6;
+      --accent-pink: #f0a8d0;
+      --accent-purple: #9b59b6;
+
+      /* Tema navy escuro */
+      --bg: #0c1a2e;
+      --surface: #152338;
+      --surface2: #1a2d4a;
+      --border: #2a4270;
+      --text: #dce8f4;
+      --text-muted: #7a9ab8;
+      --white: #dce8f4;
+      --shadow: rgba(0, 0, 0, 0.35);
+      --shadow-hover: rgba(0, 0, 0, 0.55);
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(160deg, #0c1a2e 0%, #0f2240 60%, #1a2d4a 100%);
+      min-height: 100vh;
+      color: var(--text);
+    }
+
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #0c1a2e 0%, #1a365d 100%);
+      border-bottom: 3px solid;
+      border-image: linear-gradient(90deg, var(--primary-blue), var(--primary-pink)) 1;
+      color: var(--white);
+      padding: 2rem 0;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    .header-content {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+    }
+
+    .logo-container {
+      flex-shrink: 0;
+    }
+
+    .logo {
+      height: 80px;
+      width: auto;
+      object-fit: contain;
+    }
+
+    .header-text h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, var(--white) 0%, var(--accent-pink) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header-text p {
+      font-size: 1.1rem;
+      opacity: 0.9;
+    }
+
+    /* Main Content */
+    .main-content {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 3rem 2rem;
+    }
+
+    .intro-section {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    .intro-section h2 {
+      font-size: 2rem;
+      color: var(--text);
+      margin-bottom: 1rem;
+    }
+
+    .intro-section p {
+      font-size: 1.1rem;
+      color: var(--text-muted);
+      max-width: 800px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+
+    /* Dashboard Grid */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      gap: 2rem;
+      margin-top: 2rem;
+    }
+
+    /* Panel Card */
+    .panel-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2rem;
+      box-shadow: 0 4px 12px var(--shadow);
+      transition: all 0.3s ease;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      text-decoration: none;
+      color: inherit;
+      display: block;
+    }
+
+    .panel-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: linear-gradient(90deg, var(--primary-blue), var(--primary-pink));
+    }
+
+    .panel-card:hover {
+      transform: translateY(-6px);
+      border-color: var(--primary-blue);
+      box-shadow: 0 12px 32px var(--shadow-hover);
+    }
+
+    .panel-card-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .panel-icon {
+      width: 60px;
+      height: 60px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      flex-shrink: 0;
+    }
+
+    .panel-card:nth-child(1) .panel-icon {
+      background: linear-gradient(135deg, var(--primary-blue), #5ba3f5);
+    }
+
+    .panel-card:nth-child(2) .panel-icon {
+      background: linear-gradient(135deg, var(--primary-pink), #e76bb8);
+    }
+
+    .panel-card:nth-child(3) .panel-icon {
+      background: linear-gradient(135deg, var(--accent-purple), #b37dc4);
+    }
+
+    .panel-title {
+      flex: 1;
+    }
+
+    .panel-title h3 {
+      font-size: 1.5rem;
+      color: var(--text);
+      margin-bottom: 0.25rem;
+    }
+
+    .panel-title .subtitle {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    .panel-description {
+      font-size: 1rem;
+      line-height: 1.6;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+
+    .panel-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--primary-blue);
+      font-weight: 600;
+      margin-top: 1rem;
+    }
+
+    .panel-action svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    /* Footer */
+    .footer {
+      background: #0c1a2e;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      text-align: center;
+      padding: 2rem;
+      margin-top: 4rem;
+    }
+
+    .footer p {
+      opacity: 0.85;
+    }
+
+    /* Decorative Elements */
+    .decorative-circles {
+      position: fixed;
+      width: 100%;
+      height: 100%;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      z-index: -1;
+      overflow: hidden;
+    }
+
+    .circle {
+      position: absolute;
+      border-radius: 50%;
+      opacity: 0.1;
+    }
+
+    .circle-1 {
+      width: 300px;
+      height: 300px;
+      background: var(--primary-blue);
+      top: 5%;
+      right: 3%;
+      opacity: 0.06;
+    }
+
+    .circle-2 {
+      width: 200px;
+      height: 200px;
+      background: var(--primary-pink);
+      bottom: 10%;
+      left: 5%;
+      opacity: 0.06;
+    }
+
+    .circle-3 {
+      width: 150px;
+      height: 150px;
+      background: var(--accent-purple);
+      top: 55%;
+      right: 12%;
+      opacity: 0.05;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .header-content {
+        flex-direction: column;
+        text-align: center;
+      }
+
+      .header-text h1 {
+        font-size: 1.8rem;
+      }
+
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Decorative Circles -->
+  <div class="decorative-circles">
+    <div class="circle circle-1"></div>
+    <div class="circle circle-2"></div>
+    <div class="circle circle-3"></div>
+  </div>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-content">
+      <div class="logo-container">
+        <img src="1775430942711_image.png" alt="Censo FTS" class="logo">
+      </div>
+      <div class="header-text">
+        <h1>Painéis Analíticos</h1>
+        <p>Sistema de Monitoramento e Gestão de Vínculos - FioCruz</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <section class="intro-section">
+      <h2>Bem-vindo ao Sistema de Análise do Censo FTS</h2>
+      <p>
+        Explore os dados do Censo da Força de Trabalho na Saúde através de painéis interativos 
+        e descubra insights sobre vínculos profissionais, recenseamento e resolução de divergências.
+      </p>
+    </section>
+
+    <div class="dashboard-grid">
+      <!-- Painel 1: Estabelecimentos Recenseados -->
+      <a href="painel_estabelecimentos.html" class="panel-card">
+        <div class="panel-card-header">
+          <div class="panel-icon">🏥</div>
+          <div class="panel-title">
+            <h3>Estabelecimentos Recenseados</h3>
+            <span class="subtitle">Cobertura Territorial</span>
+          </div>
+        </div>
+        <p class="panel-description">
+          Explore a distribuição geográfica dos estabelecimentos de saúde recenseados, 
+          monitore a cobertura por região e acompanhe o progresso das atividades de coleta.
+        </p>
+        <div class="panel-action">
+          Acessar Painel
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+          </svg>
+        </div>
+      </a>
+
+      <!-- Painel 2: Vínculos Recenseados -->
+      <a href="painel_vinculos.html" class="panel-card">
+        <div class="panel-card-header">
+          <div class="panel-icon">👥</div>
+          <div class="panel-title">
+            <h3>Vínculos Recenseados</h3>
+            <span class="subtitle">Panorama Geral</span>
+          </div>
+        </div>
+        <p class="panel-description">
+          Visualize e analise todos os vínculos profissionais identificados durante o recenseamento, 
+          com filtros por região, estabelecimento, ocupação e outras dimensões relevantes.
+        </p>
+        <div class="panel-action">
+          Acessar Painel
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+          </svg>
+        </div>
+      </a>
+
+      <!-- Painel 3: Resolução de Divergências -->
+      <a href="painel_resolucao.html" class="panel-card">
+        <div class="panel-card-header">
+          <div class="panel-icon">🔍</div>
+          <div class="panel-title">
+            <h3>Resolução de Divergências</h3>
+            <span class="subtitle">Monitoramento de Qualidade</span>
+          </div>
+        </div>
+        <p class="panel-description">
+          Acompanhe o processo de validação e resolução de divergências identificadas entre 
+          os vínculos recenseados e o espelho CNES, com métricas de evolução temporal.
+        </p>
+        <div class="panel-action">
+          Acessar Painel
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+          </svg>
+        </div>
+      </a>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <p>&copy; 2025 FioCruz - Fundação Oswaldo Cruz | Censo da Força de Trabalho na Saúde</p>
+  </footer>
+</body>
+</html>

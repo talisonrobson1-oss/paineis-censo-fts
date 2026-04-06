@@ -1,0 +1,1408 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <script src="api-config.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FioCruz — Painel de Monitoramento do Recenseamento</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+
+  /* LOADING STATE */
+.loading-overlay{
+  position:fixed;
+  top:0;left:0;right:0;bottom:0;
+  background:rgba(13,17,23,0.95);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:9999;
+  flex-direction:column;
+  gap:20px;
+}
+.spinner{
+  width:50px;height:50px;
+  border:4px solid var(--border);
+  border-top-color:var(--blue);
+  border-radius:50%;
+  animation:spin 1s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+.loading-text{
+  font-size:14px;
+  color:var(--muted);
+  font-family:'Sora',sans-serif;
+}
+.error-container{
+  background:var(--surface);
+  border:1px solid var(--red);
+  border-radius:10px;
+  padding:32px;
+  max-width:500px;
+  text-align:center;
+}
+.error-icon{font-size:48px;margin-bottom:16px;}
+.error-title{
+  font-size:18px;
+  font-weight:600;
+  color:var(--red);
+  margin-bottom:12px;
+}
+.error-message{
+  font-size:14px;
+  color:var(--text);
+  margin-bottom:16px;
+  line-height:1.6;
+}
+.error-details{
+  font-size:11px;
+  color:var(--muted);
+  background:var(--surface2);
+  padding:12px;
+  border-radius:6px;
+  margin-bottom:20px;
+  font-family:'JetBrains Mono',monospace;
+}
+.error-actions{
+  display:flex;
+  gap:12px;
+  justify-content:center;
+  flex-wrap:wrap;
+}
+.error-btn{
+  background:var(--surface2);
+  border:1px solid var(--border);
+  color:var(--text);
+  padding:10px 20px;
+  border-radius:6px;
+  font-family:'Sora',sans-serif;
+  font-size:13px;
+  cursor:pointer;
+  transition:all .2s;
+}
+.error-btn:hover{
+  border-color:var(--blue);
+  color:var(--blue);
+}
+.error-btn.primary{
+  background:var(--blue);
+  border-color:var(--blue);
+  color:#fff;
+}
+.error-btn.primary:hover{
+  background:#2596c9;
+  border-color:#2596c9;
+}
+  @import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2330;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #2ea8e0;
+    --accent2: #3fb950;
+    --accent3: #d29922;
+    --accent4: #f85149;
+    --accent5: #bc8cff;
+    --concluido: #3fb950;
+    --andamento: #2ea8e0;
+    --nao-iniciado: #8b949e;
+    --contato: #d29922;
+    --validacao: #bc8cff;
+    --recusado: #f85149;
+    --devolvido: #ff7b72;
+    --inativo: #6e7681;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Sora', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* HEADER */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo-badge {
+    background: linear-gradient(135deg, #2ea8e0, #bc8cff);
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #fff;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .header-title {
+    flex: 1;
+  }
+
+  .header-title h1 {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .header-title p {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  .header-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: right;
+    line-height: 1.7;
+  }
+
+  /* FILTERS */
+  .filters-bar {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .filter-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .filter-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--accent);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+  }
+
+  .filter-section-content {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+  }
+
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .filter-group label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+  }
+
+  select {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-family: 'Sora', sans-serif;
+    font-size: 13px;
+    cursor: pointer;
+    min-width: 160px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  select:focus { border-color: var(--accent); }
+
+  .btn-reset {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-family: 'Sora', sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn-reset:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* MAIN */
+  main {
+    padding: 24px 32px;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+
+  /* SECTION TITLE */
+  .section-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* KPI CARDS */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+
+  .kpi-row {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .kpi-row.primeira-linha {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .kpi-row.segunda-linha {
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  }
+
+  .kpi-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+
+  .kpi-card:hover { border-color: var(--accent); }
+
+  .kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--card-accent, var(--accent));
+  }
+
+  .kpi-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  .kpi-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--card-accent, var(--accent));
+    line-height: 1;
+  }
+
+  .kpi-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  /* CHARTS GRID */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  .charts-grid.three {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+
+  .chart-card.wide {
+    grid-column: span 2;
+  }
+
+  .chart-title {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .chart-title span {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: inline-block;
+  }
+
+  .chart-wrap {
+    position: relative;
+    height: 240px;
+  }
+
+  .chart-wrap.tall { height: 300px; }
+
+  /* PROGRESS BARS */
+  .progress-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .progress-item {
+    display: grid;
+    grid-template-columns: 160px 1fr 50px;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .progress-item .name {
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .progress-bar {
+    background: var(--border);
+    border-radius: 3px;
+    height: 6px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+
+  .progress-item .count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: right;
+  }
+
+  /* TABLE */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 28px;
+  }
+
+  .table-header {
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .table-header h3 {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+  }
+
+  .search-input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-family: 'Sora', sans-serif;
+    font-size: 12px;
+    width: 260px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .search-input:focus { border-color: var(--accent); }
+
+  .table-scroll { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  thead th {
+    background: var(--surface2);
+    padding: 10px 14px;
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  thead th:hover { color: var(--accent); }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+  }
+
+  tbody tr:hover { background: var(--surface2); }
+  tbody tr:last-child { border-bottom: none; }
+
+  tbody td {
+    padding: 10px 14px;
+    color: var(--text);
+    white-space: nowrap;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+
+  .badge-concluido { background: rgba(63,185,80,.15); color: var(--concluido); }
+  .badge-andamento { background: rgba(46,168,224,.15); color: var(--andamento); }
+  .badge-nao { background: rgba(139,148,158,.15); color: var(--nao-iniciado); }
+  .badge-contato { background: rgba(210,153,34,.15); color: var(--contato); }
+  .badge-validacao { background: rgba(188,140,255,.15); color: var(--validacao); }
+  .badge-recusado { background: rgba(248,81,73,.15); color: var(--recusado); }
+  .badge-devolvido { background: rgba(255,123,114,.15); color: var(--devolvido); }
+  .badge-inativo { background: rgba(110,118,129,.15); color: var(--inativo); }
+
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .pagination-btns {
+    display: flex;
+    gap: 6px;
+  }
+
+  .pagination-btns button {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 10px;
+    border-radius: 5px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .pagination-btns button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .pagination-btns button:disabled { opacity: 0.3; cursor: default; }
+
+  /* RECENSEADORES RANKING */
+  .rank-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  /* FOOTER */
+  footer {
+    text-align: center;
+    padding: 20px;
+    font-size: 11px;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border);
+  }
+
+  @media (max-width: 900px) {
+    .charts-grid, .charts-grid.three, .rank-grid { grid-template-columns: 1fr; }
+    .chart-card.wide { grid-column: span 1; }
+    main { padding: 16px; }
+    .filters-bar { padding: 12px 16px; }
+    header { padding: 12px 16px; }
+  }
+</style>
+</head>
+<body>
+<!-- Loading Overlay -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-text">Carregando dados da API...</div>
+</div>
+
+<header>
+  <div class="logo-badge">FioCruz</div>
+  <div class="header-title">
+    <h1>Painel de Monitoramento — Recenseamento da Força de Trabalho</h1>
+    <p>Projeto Piloto · Unidades Federativas: Distrito Federal &amp; Mato Grosso do Sul</p>
+  </div>
+  <div class="header-meta">
+    <div id="update-date">Última atualização: —</div>
+    <div id="total-records">Total de registros: carregando…</div>
+  </div>
+</header>
+
+<div class="filters-bar">
+  <!-- Seção 1: Localização -->
+  <div class="filter-section">
+    <div class="filter-section-title">🗺️ Localização</div>
+    <div class="filter-section-content">
+      <div class="filter-group">
+        <label>UF</label>
+        <select id="f-uf">
+          <option value="">Todas</option>
+          <option value="DF">DF</option>
+          <option value="MS">MS</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Macrorregião de Saúde</label>
+        <select id="f-macro"><option value="">Todas</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Regiões de Saúde</label>
+        <select id="f-regional"><option value="">Todas</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Município</label>
+        <select id="f-municipio"><option value="">Todos</option></select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Seção 2: Trabalho no Censo -->
+  <div class="filter-section">
+    <div class="filter-section-title">📋 Trabalho no Censo</div>
+    <div class="filter-section-content">
+      <div class="filter-group">
+        <label>Situação</label>
+        <select id="f-situacao"><option value="">Todas</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Recenseador</label>
+        <select id="f-recenseador"><option value="">Todos</option></select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Seção 3: Características do Estabelecimento -->
+  <div class="filter-section">
+    <div class="filter-section-title">🏥 Características do Estabelecimento</div>
+    <div class="filter-section-content">
+      <div class="filter-group">
+        <label>Vínculo ao SUS</label>
+        <select id="f-sus">
+          <option value="">Todos</option>
+          <option value="S">Sim</option>
+          <option value="N">Não</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Esfera Administrativa</label>
+        <select id="f-esfera"><option value="">Todas</option></select>
+      </div>
+      <button class="btn-reset" onclick="resetFilters()">↺ Limpar Filtros</button>
+    </div>
+  </div>
+</div>
+
+<main>
+  <!-- KPIs -->
+  <div class="section-label">Indicadores Gerais</div>
+  
+  <!-- Primeira linha: Estabelecimentos e Vínculos -->
+  <div class="kpi-row primeira-linha">
+    <div class="kpi-card" style="--card-accent: var(--accent)">
+      <div class="kpi-label">Estabelecimentos</div>
+      <div class="kpi-value" id="kpi-total">—</div>
+      <div class="kpi-sub">no filtro atual</div>
+    </div>
+    <div class="kpi-card" style="--card-accent: var(--accent3)">
+      <div class="kpi-label">Total de Vínculos</div>
+      <div class="kpi-value" id="kpi-vinculos">—</div>
+      <div class="kpi-sub">soma dos estabelecimentos</div>
+    </div>
+  </div>
+
+  <!-- Segunda linha: Situações ordenadas por quantidade (decrescente) -->
+  <div class="kpi-row segunda-linha" id="kpi-situacoes">
+    <!-- Cards de situação serão inseridos dinamicamente -->
+  </div>
+
+  <!-- Charts Row 1 -->
+  <div class="section-label">Situação do Recenseamento</div>
+  <div class="charts-grid">
+    <div class="chart-card">
+      <div class="chart-title"><span></span> Distribuição por Situação</div>
+      <div class="chart-wrap"><canvas id="chart-situacao"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title"><span style="background:var(--accent2)"></span> Esfera Administrativa</div>
+      <div class="chart-wrap"><canvas id="chart-esfera"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Charts Row 2 -->
+  <div class="section-label">Distribuição Geográfica</div>
+  <div class="charts-grid">
+    <div class="chart-card">
+      <div class="chart-title"><span style="background:var(--accent5)"></span> Por UF</div>
+      <div class="chart-wrap"><canvas id="chart-uf"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title"><span style="background:var(--accent3)"></span> Por Macrorregião</div>
+      <div class="chart-wrap"><canvas id="chart-macro"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Regional progress -->
+  <div class="section-label">Progresso por Regional de Saúde</div>
+  <div class="chart-card" style="margin-bottom:28px">
+    <div class="chart-title"><span style="background:var(--concluido)"></span> % Concluído por Regional</div>
+    <div class="progress-list" id="progress-regional"></div>
+  </div>
+
+  <!-- Recenseadores -->
+  <div class="section-label">Desempenho por Recenseador</div>
+  <div class="rank-grid">
+    <div class="chart-card">
+      <div class="chart-title"><span style="background:var(--accent)"></span> Estabelecimentos por Recenseador</div>
+      <div class="chart-wrap tall"><canvas id="chart-recenseador"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title"><span style="background:var(--concluido)"></span> % Concluído por Recenseador</div>
+      <div class="chart-wrap tall"><canvas id="chart-recenseador-pct"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="section-label">Registros</div>
+  <div class="table-wrap">
+    <div class="table-header">
+      <h3>Estabelecimentos <span id="table-count" style="color:var(--text);font-family:JetBrains Mono,monospace;font-size:11px;margin-left:8px"></span></h3>
+      <input class="search-input" id="table-search" placeholder="Buscar por nome, CNES, município…" oninput="renderTable()">
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="sortTable('CO_CNES')">CNES ↕</th>
+            <th onclick="sortTable('NO_FANTASIA')">Nome Fantasia ↕</th>
+            <th onclick="sortTable('SG_UF')">UF ↕</th>
+            <th onclick="sortTable('NO_MUNICIPIO')">Município ↕</th>
+            <th onclick="sortTable('NO_REGIONAL_SAUDE')">Regional ↕</th>
+            <th onclick="sortTable('ESFERA')">Esfera ↕</th>
+            <th>SUS</th>
+            <th onclick="sortTable('TOTAL_VINCULOS')">Vínculos ↕</th>
+            <th onclick="sortTable('RECENSEADOR')">Recenseador ↕</th>
+            <th onclick="sortTable('SITUACAO_RECENSEAMENTO')">Situação ↕</th>
+            <th onclick="sortTable('DT_ATUALIZACAO')">Atualização ↕</th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <span id="page-info"></span>
+      <div class="pagination-btns">
+        <button onclick="previousPage()" id="prev-page">← Anterior</button>
+        <button onclick="nextPage()" id="next-page">Próximo →</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  FioCruz · Projeto de Recenseamento da Força de Trabalho em Saúde · Versão Piloto DF &amp; MS
+</footer>
+
+<script>
+// ==========================================
+// VARIÁVEIS GLOBAIS
+// ==========================================
+let D = null;
+const CH = {};
+
+// ==========================================
+// FUNÇÕES DE UI
+// ==========================================
+function showLoading(message = 'Carregando dados...') {
+  const overlay = document.getElementById('loading-overlay');
+  if (overlay) {
+    const text = overlay.querySelector('.loading-text');
+    if (text) text.textContent = message;
+    overlay.style.display = 'flex';
+  }
+}
+
+function hideLoading() {
+  const overlay = document.getElementById('loading-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function showError(title, message) {
+  const overlay = document.getElementById('loading-overlay');
+  if (overlay) {
+    overlay.innerHTML = `
+      <div class="error-container">
+        <div class="error-icon">⚠️</div>
+        <div class="error-title">${title}</div>
+        <div class="error-message">${message}</div>
+        <div class="error-details">
+          Verifique se a API está rodando em: ${API_CONFIG.BASE_URL}
+        </div>
+        <div class="error-actions">
+          <button class="error-btn primary" onclick="location.reload()">Tentar Novamente</button>
+          <button class="error-btn" onclick="window.open('${API_CONFIG.BASE_URL}/health', '_blank')">Verificar API</button>
+        </div>
+      </div>
+    `;
+    overlay.style.display = 'flex';
+  }
+}
+
+function set(id, v) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = v;
+}
+
+// ==========================================
+// CARREGAR DADOS DA API
+// ==========================================
+async function loadDataFromAPI() {
+  try {
+    console.log('🚀 Iniciando carregamento...');
+    showLoading('Verificando API...');
+    
+    const isOnline = await checkApiHealth();
+    if (!isOnline) throw new Error('API não está respondendo');
+    
+    showLoading('Carregando dados...');
+    
+    const [statsRes, situacaoRes, ufRes, esferaRes, macroRes, regionalRes, recenseadorRes, filtrosRes] = await Promise.all([
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_STATS),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_SITUACAO),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_UF),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_ESFERA),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_MACRO),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_REGIONAL),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_RECENSEADOR),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_FILTROS)
+    ]);
+    
+    if (!statsRes.success) throw new Error(statsRes.error);
+    if (!situacaoRes.success) throw new Error(situacaoRes.error);
+    if (!ufRes.success) throw new Error(ufRes.error);
+    
+    D = {
+      stats: statsRes.data,
+      situacoes: situacaoRes.data,
+      ufs: ufRes.data,
+      esferas: esferaRes.success ? esferaRes.data : [],
+      macros: macroRes.success ? macroRes.data : [],
+      regionais: regionalRes.success ? regionalRes.data : [],
+      recenseadores: recenseadorRes.success ? recenseadorRes.data : [],
+      filtros: filtrosRes.success ? filtrosRes.data : null
+    };
+    
+    console.log('✅ Dados carregados:', D);
+    
+    // Popular filtros
+    if (D.filtros) {
+      populateFilters();
+    }
+    
+    hideLoading();
+    initializePainel();
+    loadTableData();
+    
+    console.log('✅ Painel carregado com sucesso');
+    
+  } catch (error) {
+    console.error('❌ Erro:', error);
+    showError('Erro ao Carregar Dados', error.message);
+  }
+}
+
+// ==========================================
+// POPULAR FILTROS
+// ==========================================
+function populateFilters() {
+  if (!D || !D.filtros) {
+    console.warn('⚠️ D.filtros não disponível');
+    return;
+  }
+  
+  console.log('📋 Populando filtros com dados:', D.filtros);
+  
+  // Popular selects com valores da API
+  const filters = {
+    'f-macro': D.filtros.macrorregiao || [],
+    'f-regional': D.filtros.regional || [],
+    'f-municipio': D.filtros.municipio || [],
+    'f-situacao': D.filtros.situacao || [],
+    'f-esfera': D.filtros.esfera || [],
+    'f-recenseador': D.filtros.recenseador || []
+  };
+  
+  Object.entries(filters).forEach(([id, values]) => {
+    const select = document.getElementById(id);
+    
+    if (!select) {
+      console.warn(`⚠️ Elemento ${id} não encontrado no DOM`);
+      return;
+    }
+    
+    if (values.length === 0) {
+      console.warn(`⚠️ Nenhum valor para ${id}`);
+      return;
+    }
+    
+    console.log(`✓ Populando ${id} com ${values.length} opções`);
+    
+    // Limpar opções existentes (exceto a primeira "Todas/Todos")
+    while (select.options.length > 1) {
+      select.remove(1);
+    }
+    
+    // Adicionar novas opções
+    values.forEach(value => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = value;
+      select.appendChild(option);
+    });
+  });
+  
+  console.log('✅ Filtros populados');
+}
+
+// ==========================================
+// INICIALIZAR PAINEL
+// ==========================================
+function initializePainel() {
+  updateKPIs();
+  renderCharts();
+  
+  // Adicionar event listeners aos filtros
+  const filterIds = ['f-uf', 'f-macro', 'f-regional', 'f-municipio', 'f-situacao', 'f-recenseador', 'f-sus', 'f-esfera'];
+  
+  filterIds.forEach(id => {
+    const select = document.getElementById(id);
+    if (select) {
+      select.addEventListener('change', async () => {
+        console.log(`🔄 Filtro ${id} alterado para:`, select.value);
+        await reloadWithFilters();
+      });
+    }
+  });
+  
+  console.log('✅ Event listeners dos filtros configurados');
+}
+
+// ==========================================
+// RECARREGAR DADOS COM FILTROS
+// ==========================================
+async function reloadWithFilters() {
+  try {
+    showLoading('Aplicando filtros...');
+    
+    // Coletar valores dos filtros
+    const filters = {
+      uf: document.getElementById('f-uf')?.value || '',
+      macrorregiao: document.getElementById('f-macro')?.value || '',
+      regional: document.getElementById('f-regional')?.value || '',
+      municipio: document.getElementById('f-municipio')?.value || '',
+      situacao: document.getElementById('f-situacao')?.value || '',
+      recenseador: document.getElementById('f-recenseador')?.value || '',
+      sus: document.getElementById('f-sus')?.value || '',
+      esfera: document.getElementById('f-esfera')?.value || ''
+    };
+    
+    // Construir query string
+    const queryParams = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) queryParams.append(key, value);
+    });
+    
+    const queryString = queryParams.toString();
+    const urlSuffix = queryString ? `?${queryString}` : '';
+    
+    console.log('📊 Recarregando com filtros:', filters);
+    
+    // Recarregar todos os dados
+    const [statsRes, situacaoRes, ufRes, esferaRes, macroRes] = await Promise.all([
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_STATS + urlSuffix),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_SITUACAO + urlSuffix),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_UF + urlSuffix),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_ESFERA + urlSuffix),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_MACRO + urlSuffix)
+    ]);
+    
+    // Atualizar D com novos dados
+    D.stats = statsRes.success ? statsRes.data : D.stats;
+    D.situacoes = situacaoRes.success ? situacaoRes.data : D.situacoes;
+    D.ufs = ufRes.success ? ufRes.data : D.ufs;
+    D.esferas = esferaRes.success ? esferaRes.data : D.esferas;
+    D.macros = macroRes.success ? macroRes.data : D.macros;
+    
+    // Atualizar UI
+    updateKPIs();
+    renderCharts();
+    
+    // Recarregar tabela com filtros
+    await loadTableData(1, filters);
+    
+    hideLoading();
+    
+    console.log('✅ Dados atualizados com filtros');
+    
+  } catch (error) {
+    console.error('❌ Erro ao aplicar filtros:', error);
+    hideLoading();
+  }
+}
+
+// ==========================================
+// ATUALIZAR KPIs
+// ==========================================
+function updateKPIs() {
+  if (!D || !D.stats) return;
+  
+  const fmt = n => (n || 0).toLocaleString('pt-BR');
+  
+  set('kpi-total', fmt(D.stats.total_estabelecimentos));
+  set('kpi-vinculos', fmt(D.stats.total_vinculos || 0));
+  
+  // Criar cards de situação
+  if (D.situacoes && D.situacoes.length > 0) {
+    const container = document.getElementById('kpi-situacoes');
+    if (container) {
+      const sorted = [...D.situacoes].sort((a, b) => parseInt(b.quantidade) - parseInt(a.quantidade));
+      
+      container.innerHTML = sorted.map((sit, idx) => {
+        const cor = idx === 0 ? 'var(--accent)' : `var(--accent${(idx % 6) + 1})`;
+        return `
+          <div class="kpi-card" style="--card-accent: ${cor}">
+            <div class="kpi-label">${sit.situacao}</div>
+            <div class="kpi-value">${fmt(parseInt(sit.quantidade))}</div>
+            <div class="kpi-sub">${parseFloat(sit.percentual).toFixed(1)}% do total</div>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+  
+  console.log('✅ KPIs atualizados');
+}
+
+// ==========================================
+// RENDERIZAR GRÁFICOS
+// ==========================================
+function destroyChart(id) {
+  if (CH[id]) {
+    CH[id].destroy();
+    CH[id] = null;
+  }
+}
+
+function renderCharts() {
+  if (!D) return;
+  
+  console.log('📊 Renderizando gráficos...');
+  
+  // Gráfico 1: Situação (barras verticais ordenadas)
+  if (D.situacoes && D.situacoes.length > 0) {
+    const ctx = document.getElementById('chart-situacao');
+    if (ctx) {
+      // Ordenar por quantidade decrescente
+      const sorted = [...D.situacoes].sort((a, b) => parseInt(b.quantidade) - parseInt(a.quantidade));
+      
+      destroyChart('situacao');
+      CH['situacao'] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: sorted.map(s => s.situacao),
+          datasets: [{
+            data: sorted.map(s => parseInt(s.quantidade)),
+            backgroundColor: ['#3fb950', '#d29922', '#2ea8e0', '#f85149', '#bc8cff', '#ff7b72', '#8b949e'],
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { color: '#8b949e' },
+              grid: { color: '#30363d' }
+            },
+            x: {
+              ticks: { color: '#8b949e' },
+              grid: { display: false }
+            }
+          }
+        }
+      });
+    }
+  }
+  
+  // Gráfico 2: Esfera (barras verticais ordenadas)
+  if (D.esferas && D.esferas.length > 0) {
+    const ctx = document.getElementById('chart-esfera');
+    if (ctx) {
+      // Ordenar por quantidade decrescente
+      const sorted = [...D.esferas].sort((a, b) => parseInt(b.quantidade) - parseInt(a.quantidade));
+      
+      destroyChart('esfera');
+      CH['esfera'] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: sorted.map(e => e.esfera),
+          datasets: [{
+            data: sorted.map(e => parseInt(e.quantidade)),
+            backgroundColor: ['#2ea8e0', '#3fb950', '#f85149', '#bc8cff'],
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { color: '#8b949e' },
+              grid: { color: '#30363d' }
+            },
+            x: {
+              ticks: { color: '#8b949e' },
+              grid: { display: false }
+            }
+          }
+        }
+      });
+    }
+  }
+  
+  // Gráfico 3: UF (barras horizontais)
+  if (D.ufs && D.ufs.length > 0) {
+    const ctx = document.getElementById('chart-uf');
+    if (ctx) {
+      const sorted = [...D.ufs].sort((a, b) => parseInt(b.quantidade) - parseInt(a.quantidade));
+      destroyChart('uf');
+      CH['uf'] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: sorted.map(u => u.uf),
+          datasets: [{
+            data: sorted.map(u => parseInt(u.quantidade)),
+            backgroundColor: '#2ea8e0',
+            borderRadius: 4
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#8b949e' }, grid: { color: '#30363d' } },
+            y: { ticks: { color: '#8b949e' }, grid: { color: '#30363d' } }
+          }
+        }
+      });
+    }
+  }
+  
+  // Gráfico 4: Macrorregião (barras)
+  if (D.macros && D.macros.length > 0) {
+    const ctx = document.getElementById('chart-macro');
+    if (ctx) {
+      const sorted = [...D.macros].sort((a, b) => parseInt(b.quantidade) - parseInt(a.quantidade));
+      destroyChart('macro');
+      CH['macro'] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: sorted.map(m => m.macrorregiao),
+          datasets: [{
+            data: sorted.map(m => parseInt(m.quantidade)),
+            backgroundColor: '#bc8cff',
+            borderRadius: 4
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#8b949e' }, grid: { color: '#30363d' } },
+            y: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { color: '#30363d' } }
+          }
+        }
+      });
+    }
+  }
+  
+  // Gráfico 5: % Concluído por Regional (progress list)
+  if (D.regionais && D.regionais.length > 0) {
+    const container = document.getElementById('progress-regional');
+    if (container) {
+      const sorted = [...D.regionais].sort((a, b) => parseFloat(b.percentual) - parseFloat(a.percentual));
+      container.innerHTML = sorted.map(r => {
+        const pct = parseFloat(r.percentual);
+        const total = parseInt(r.total);
+        const concluidos = parseInt(r.concluidos);
+        return `
+          <div class="progress-item">
+            <div class="progress-header">
+              <span class="progress-label">${r.regional}</span>
+              <span class="progress-value">${pct.toFixed(1)}%</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" style="width: ${pct}%; background: #3fb950"></div>
+            </div>
+            <div class="progress-sub">${concluidos.toLocaleString('pt-BR')} de ${total.toLocaleString('pt-BR')} concluídos</div>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+  
+  // Gráfico 6: Estabelecimentos por Recenseador (quantidade)
+  if (D.recenseadores && D.recenseadores.length > 0) {
+    const ctx = document.getElementById('chart-recenseador');
+    if (ctx) {
+      const sorted = [...D.recenseadores].sort((a, b) => parseInt(b.total) - parseInt(a.total)).slice(0, 15);
+      destroyChart('recenseador');
+      CH['recenseador'] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: sorted.map(r => r.recenseador),
+          datasets: [{
+            label: 'Total',
+            data: sorted.map(r => parseInt(r.total)),
+            backgroundColor: '#2ea8e0',
+            borderRadius: 4
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            x: {
+              ticks: { color: '#8b949e' },
+              grid: { color: '#30363d' }
+            },
+            y: {
+              ticks: { color: '#8b949e', font: { size: 9 } },
+              grid: { color: '#30363d' }
+            }
+          }
+        }
+      });
+    }
+  }
+  
+  // Gráfico 7: % Concluído por Recenseador
+  if (D.recenseadores && D.recenseadores.length > 0) {
+    const ctx = document.getElementById('chart-recenseador-pct');
+    if (ctx) {
+      const sorted = [...D.recenseadores]
+        .filter(r => parseInt(r.total) >= 10) // Apenas com 10+ estabelecimentos
+        .sort((a, b) => parseFloat(b.percentual) - parseFloat(a.percentual))
+        .slice(0, 15);
+      destroyChart('recenseador-pct');
+      CH['recenseador-pct'] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: sorted.map(r => r.recenseador),
+          datasets: [{
+            label: '% Concluído',
+            data: sorted.map(r => parseFloat(r.percentual)),
+            backgroundColor: '#3fb950',
+            borderRadius: 4
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            x: {
+              max: 100,
+              ticks: { color: '#8b949e', callback: v => v + '%' },
+              grid: { color: '#30363d' }
+            },
+            y: {
+              ticks: { color: '#8b949e', font: { size: 9 } },
+              grid: { color: '#30363d' }
+            }
+          }
+        }
+      });
+    }
+  }
+  
+  console.log('✅ Gráficos renderizados');
+}
+
+// ==========================================
+// TABELA DE REGISTROS
+// ==========================================
+let currentPage = 1;
+const pageSize = 50;
+
+async function loadTableData(page = 1, filters = {}) {
+  try {
+    currentPage = page;
+    
+    // Construir query string com filtros
+    const queryParams = new URLSearchParams({ page, limit: pageSize });
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) queryParams.append(key, value);
+    });
+    
+    const result = await apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_LISTA + '?' + queryParams.toString());
+    
+    if (!result.success) {
+      console.error('Erro ao carregar tabela:', result.error);
+      return;
+    }
+    
+    const { data, pagination } = result.data;
+    
+    // Renderizar tabela
+    const tbody = document.getElementById('table-body');
+    if (tbody) {
+      tbody.innerHTML = data.map(row => `
+        <tr>
+          <td>${row.co_cnes || '—'}</td>
+          <td>${row.no_fantasia || '—'}</td>
+          <td>${row.sg_uf || '—'}</td>
+          <td>${row.no_municipio || '—'}</td>
+          <td>${row.esfera || '—'}</td>
+          <td>${row.situacao_recenseamento || '—'}</td>
+          <td>${row.recenseador || '—'}</td>
+        </tr>
+      `).join('');
+    }
+    
+    // Atualizar info de paginação
+    const pageInfo = document.getElementById('page-info');
+    if (pageInfo) {
+      pageInfo.textContent = `Página ${pagination.page} de ${pagination.pages} (${pagination.total.toLocaleString('pt-BR')} registros)`;
+    }
+    
+    // Atualizar botões
+    const prevBtn = document.getElementById('prev-page');
+    const nextBtn = document.getElementById('next-page');
+    if (prevBtn) prevBtn.disabled = pagination.page <= 1;
+    if (nextBtn) nextBtn.disabled = pagination.page >= pagination.pages;
+    
+    console.log('✅ Tabela atualizada:', data.length, 'registros');
+    
+  } catch (error) {
+    console.error('❌ Erro ao carregar tabela:', error);
+  }
+}
+
+function previousPage() {
+  if (currentPage > 1) {
+    loadTableData(currentPage - 1);
+  }
+}
+
+function nextPage() {
+  loadTableData(currentPage + 1);
+}
+
+// ==========================================
+// INICIAR
+// ==========================================
+document.addEventListener('DOMContentLoaded', loadDataFromAPI);
+</script>
+
+</body>
+</html>

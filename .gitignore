@@ -1,0 +1,27 @@
+# Dependências Node
+node_modules/
+npm-debug.log*
+
+# Variáveis de ambiente — NUNCA commitar
+.env
+*.env
+.env.local
+.env.production
+
+# Logs
+*.log
+logs/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs
+.vscode/
+.idea/
+
+# Build / temporários
+dist/
+build/
+*.tmp
