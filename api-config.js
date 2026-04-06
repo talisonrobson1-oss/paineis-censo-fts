@@ -9,7 +9,7 @@
 
 const API_CONFIG = {
   // URL base da API
-  BASE_URL: 'http://localhost:3000',
+  BASE_URL: 'https://fiocruz-api.onrender.com',
   
   // Timeout para requisições (em milissegundos)
   TIMEOUT: 120000, // 120 segundos (queries pesadas)
