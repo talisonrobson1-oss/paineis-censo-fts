@@ -1144,6 +1144,33 @@ const CHAVE_VINCULO = "nu_cpf || '|' || co_cnes || '|' || co_cbo_ocupacao || '|'
 
 const CHAVE_V = "v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')";
 
+// CASE de resolução equalizado com os Indicadores Principais (requer LEFT JOIN no espelho)
+// Inclusão resolvida  → EXISTS no espelho (e.co_cpf IS NOT NULL)
+// Exclusão resolvida  → NÃO existe no espelho (e.co_cpf IS NULL)
+// Alteração resolvida → EXISTS no espelho COM carga horária diferente
+const RESOLVIDA_CASE_V = `CASE
+  WHEN v.no_tipo_operacao_censo = 'Inclusão' AND e.co_cpf IS NOT NULL
+    THEN ${CHAVE_V}
+  WHEN v.no_tipo_operacao_censo = 'Exclusão' AND e.co_cpf IS NULL
+    THEN ${CHAVE_V}
+  WHEN v.no_tipo_operacao_censo = 'Alteração' AND e.co_cpf IS NOT NULL AND (
+      COALESCE(v.qt_carga_horaria_ambulatorial::numeric, 0) != COALESCE(e.qt_carga_horaria_ambulatorial::numeric, 0)
+      OR COALESCE(v.qt_carga_horaria_hospitalar::numeric, 0) != COALESCE(e.qt_carga_hor_hosp_sus::numeric, 0)
+      OR COALESCE(v.qt_carga_horaria_outros::numeric, 0) != COALESCE(e.qt_carga_horaria_outros::numeric, 0)
+    ) THEN ${CHAVE_V}
+END`;
+
+// Versão para evolução temporal (usa INNER JOIN, Exclusão não é rastreável por competência)
+const RESOLVIDA_CASE_EVOLUCAO = `CASE
+  WHEN v.no_tipo_operacao_censo = 'Inclusão'
+    THEN ${CHAVE_V}
+  WHEN v.no_tipo_operacao_censo = 'Alteração' AND (
+      COALESCE(v.qt_carga_horaria_ambulatorial::numeric, 0) != COALESCE(e.qt_carga_horaria_ambulatorial::numeric, 0)
+      OR COALESCE(v.qt_carga_horaria_hospitalar::numeric, 0) != COALESCE(e.qt_carga_hor_hosp_sus::numeric, 0)
+      OR COALESCE(v.qt_carga_horaria_outros::numeric, 0) != COALESCE(e.qt_carga_horaria_outros::numeric, 0)
+    ) THEN ${CHAVE_V}
+END`;
+
 /**
  * GET /api/resolucao/stats
  * KPIs principais do painel de resolução
@@ -1316,70 +1343,150 @@ app.get('/api/resolucao/agregados', async (req, res) => {
     // Limitar às competências até a selecionada (evita varrer todo o espelho_cnes)
     const compLimitFilter = competencia ? `AND e.nu_comp <= '${competencia}'` : '';
 
+    // CTE reutilizável: espelha EXATAMENTE as 3 queries do /stats
+    //   Inclusão resolvida  → INNER JOIN espelho (vínculo existe)
+    //   Exclusão resolvida  → LEFT JOIN espelho IS NULL (vínculo ausente)
+    //   Alteração resolvida → INNER JOIN espelho com carga diferente
+    const resolvidasCTE = `resolvidas_eq AS (
+      SELECT DISTINCT ${CHAVE_V} AS chave
+      FROM censo.vinculos v ${recenseamentoJoin}
+      INNER JOIN censo.espelho_cnes e
+        ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes
+        AND e.co_cbo = v.co_cbo_ocupacao AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}
+      ${whereClause} ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Inclusão'
+      UNION ALL
+      SELECT DISTINCT ${CHAVE_V} AS chave
+      FROM censo.vinculos v ${recenseamentoJoin}
+      LEFT JOIN censo.espelho_cnes e
+        ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes
+        AND e.co_cbo = v.co_cbo_ocupacao AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}
+      ${whereClause} ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Exclusão'
+        AND e.co_cpf IS NULL
+      UNION ALL
+      SELECT DISTINCT ${CHAVE_V} AS chave
+      FROM censo.vinculos v ${recenseamentoJoin}
+      INNER JOIN censo.espelho_cnes e
+        ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes
+        AND e.co_cbo = v.co_cbo_ocupacao AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}
+      ${whereClause} ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Alteração'
+        AND (
+          COALESCE(v.qt_carga_horaria_ambulatorial::numeric, 0) != COALESCE(e.qt_carga_horaria_ambulatorial::numeric, 0)
+          OR COALESCE(v.qt_carga_horaria_hospitalar::numeric, 0) != COALESCE(e.qt_carga_hor_hosp_sus::numeric, 0)
+          OR COALESCE(v.qt_carga_horaria_outros::numeric, 0) != COALESCE(e.qt_carga_horaria_outros::numeric, 0)
+        )
+    )`;
+
+    // Evolução por Competência — equalizada com Indicadores Principais:
+    //   Inclusão + Alteração: INNER JOIN espelho → presença confirma resolução
+    //   Exclusão: ausência do espelho confirma resolução
+    //   Formula por comp C: resolvidas(C) = inc_alt(C) + GREATEST(total_exclusao - excl_presente_em_C, 0)
     const evolucaoQuery = `
-      WITH total_vinculos AS (
-        SELECT COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) as total
-        FROM censo.vinculos v
-        ${recenseamentoJoin}
-        ${whereClause}
-        ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
-      )
-      SELECT
-        e.nu_comp as competencia,
-        tv.total,
-        COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) as resolvidas
-      FROM censo.espelho_cnes e
-      CROSS JOIN total_vinculos tv
-      INNER JOIN censo.vinculos v
-        ON e.co_cpf = v.nu_cpf
-        AND e.co_cnes = v.co_cnes
-        AND e.co_cbo = v.co_cbo_ocupacao
-        AND e.ind_vinculacao = v.nu_vinculacao
-      ${recenseamentoJoin ? 'INNER JOIN censo.recenseamento r ON v.co_cnes = r.co_cnes' : ''}
-      ${whereClause}
-      ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
-        ${compLimitFilter}
-      GROUP BY e.nu_comp, tv.total
-      ORDER BY e.nu_comp
-    `;
-
-    // Divergências por Tipo - SIMPLIFICADA
-    const tipoQuery = `
-      SELECT 
-        v.no_tipo_operacao_censo as tipo,
-        COUNT(DISTINCT v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')) as total,
-        COUNT(DISTINCT CASE 
-          WHEN e.co_cpf IS NOT NULL 
-          THEN v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')
-        END) as resolvidas
-      FROM censo.vinculos v
-      ${recenseamentoJoin}
-      LEFT JOIN censo.espelho_cnes e 
-        ON e.co_cpf = v.nu_cpf 
-        AND e.co_cnes = v.co_cnes
-        AND e.co_cbo = v.co_cbo_ocupacao
-        AND e.ind_vinculacao = v.nu_vinculacao
-        ${compFilter}
-      ${whereClause}
-      ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
-      GROUP BY v.no_tipo_operacao_censo
-    `;
-
-    // Evolução ACUMULADA - Uma vez resolvida, conta para competências futuras
-    const compLimitClause = competencia ? `WHERE nu_comp <= '${competencia}'` : '';
-    const evolucaoAcumuladaQuery = `
-      WITH total_vinculos AS (
-        SELECT COUNT(DISTINCT v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')) as total
+      WITH
+      total_vinculos AS (
+        SELECT COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) AS total
         FROM censo.vinculos v
         ${recenseamentoJoin}
         ${whereClause}
         ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
       ),
+      total_exclusao AS (
+        SELECT COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) AS n_exclusao
+        FROM censo.vinculos v
+        ${recenseamentoJoin}
+        ${whereClause}
+        ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Exclusão'
+      ),
+      competencias_list AS (
+        SELECT DISTINCT nu_comp FROM censo.espelho_cnes
+        ${competencia ? `WHERE nu_comp <= '${competencia}'` : ''}
+        ORDER BY nu_comp
+      ),
+      inc_alt_por_comp AS (
+        SELECT e.nu_comp, COUNT(DISTINCT ${RESOLVIDA_CASE_EVOLUCAO}) AS resolvidas
+        FROM censo.espelho_cnes e
+        INNER JOIN censo.vinculos v
+          ON e.co_cpf = v.nu_cpf
+          AND e.co_cnes = v.co_cnes
+          AND e.co_cbo = v.co_cbo_ocupacao
+          AND e.ind_vinculacao = v.nu_vinculacao
+        ${recenseamentoJoin ? 'INNER JOIN censo.recenseamento r ON v.co_cnes = r.co_cnes' : ''}
+        ${whereClause}
+        ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
+          ${compLimitFilter}
+        GROUP BY e.nu_comp
+      ),
+      excl_no_espelho_por_comp AS (
+        -- Exclusão vinculos que AINDA estão no espelho nesta competência (não resolvidos)
+        SELECT e.nu_comp, COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) AS n_presente
+        FROM censo.vinculos v
+        ${recenseamentoJoin}
+        INNER JOIN censo.espelho_cnes e
+          ON e.co_cpf = v.nu_cpf
+          AND e.co_cnes = v.co_cnes
+          AND e.co_cbo = v.co_cbo_ocupacao
+          AND e.ind_vinculacao = v.nu_vinculacao
+        ${whereClause}
+        ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Exclusão'
+          ${compLimitFilter}
+        GROUP BY e.nu_comp
+      )
+      SELECT
+        cl.nu_comp AS competencia,
+        tv.total,
+        COALESCE(ia.resolvidas, 0)
+          + GREATEST(te.n_exclusao - COALESCE(ep.n_presente, 0), 0) AS resolvidas
+      FROM competencias_list cl
+      CROSS JOIN total_vinculos tv
+      CROSS JOIN total_exclusao te
+      LEFT JOIN inc_alt_por_comp ia ON ia.nu_comp = cl.nu_comp
+      LEFT JOIN excl_no_espelho_por_comp ep ON ep.nu_comp = cl.nu_comp
+      ORDER BY cl.nu_comp
+    `;
+
+    // Divergências por Tipo — idêntico ao stats (via CTE)
+    const tipoQuery = `
+      WITH ${resolvidasCTE}
+      SELECT
+        v.no_tipo_operacao_censo AS tipo,
+        COUNT(DISTINCT ${CHAVE_V}) AS total,
+        COUNT(DISTINCT r.chave) AS resolvidas
+      FROM censo.vinculos v
+      ${recenseamentoJoin}
+      LEFT JOIN resolvidas_eq r ON r.chave = ${CHAVE_V}
+      ${whereClause}
+      ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
+      GROUP BY v.no_tipo_operacao_censo
+    `;
+
+    // Evolução ACUMULADA — equalizada com Indicadores Principais:
+    //   Inc + Alt: primeira competência em que aparecem no espelho com condição atendida
+    //   Exclusão: total_exclusao − vinculos Exclusão ainda presentes no espelho em cada comp
+    //             (uso de MIN() OVER para garantir monotonicidade caso dados não sejam perfeitos)
+    const compLimitClause = competencia ? `WHERE nu_comp <= '${competencia}'` : '';
+    const evolucaoAcumuladaQuery = `
+      WITH
+      total_vinculos AS (
+        SELECT COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) AS total
+        FROM censo.vinculos v
+        ${recenseamentoJoin}
+        ${whereClause}
+        ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
+      ),
+      total_exclusao AS (
+        SELECT COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) AS n_exclusao
+        FROM censo.vinculos v
+        ${recenseamentoJoin}
+        ${whereClause}
+        ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Exclusão'
+      ),
+      competencias AS (
+        SELECT DISTINCT nu_comp FROM censo.espelho_cnes ${compLimitClause} ORDER BY nu_comp
+      ),
       primeira_resolucao AS (
-        -- Para cada vínculo, pega a PRIMEIRA competência em que foi resolvido
+        -- Inc e Alt: primeira competência em que aparecem no espelho com condição atendida
         SELECT
-          v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '') as id,
-          MIN(e.nu_comp) as comp_resolucao
+          ${CHAVE_V} AS id,
+          MIN(e.nu_comp) AS comp_resolucao
         FROM censo.vinculos v
         ${recenseamentoJoin}
         INNER JOIN censo.espelho_cnes e
@@ -1389,167 +1496,144 @@ app.get('/api/resolucao/agregados', async (req, res) => {
           AND e.ind_vinculacao = v.nu_vinculacao
         ${whereClause}
         ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
-        GROUP BY v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')
+          AND (
+            v.no_tipo_operacao_censo = 'Inclusão'
+            OR (
+              v.no_tipo_operacao_censo = 'Alteração' AND (
+                COALESCE(v.qt_carga_horaria_ambulatorial::numeric, 0) != COALESCE(e.qt_carga_horaria_ambulatorial::numeric, 0)
+                OR COALESCE(v.qt_carga_horaria_hospitalar::numeric, 0) != COALESCE(e.qt_carga_hor_hosp_sus::numeric, 0)
+                OR COALESCE(v.qt_carga_horaria_outros::numeric, 0) != COALESCE(e.qt_carga_horaria_outros::numeric, 0)
+              )
+            )
+          )
+        GROUP BY ${CHAVE_V}
       ),
-      competencias AS (
-        SELECT DISTINCT nu_comp FROM censo.espelho_cnes ${compLimitClause} ORDER BY nu_comp
+      excl_no_espelho_por_comp AS (
+        -- Quantidade de vinculos Exclusão ainda presentes no espelho por competência
+        SELECT e.nu_comp, COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) AS n_presente
+        FROM censo.vinculos v
+        ${recenseamentoJoin}
+        INNER JOIN censo.espelho_cnes e
+          ON e.co_cpf = v.nu_cpf
+          AND e.co_cnes = v.co_cnes
+          AND e.co_cbo = v.co_cbo_ocupacao
+          AND e.ind_vinculacao = v.nu_vinculacao
+        ${whereClause}
+        ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Exclusão'
+        GROUP BY e.nu_comp
       ),
       resolvidas_por_comp AS (
-        -- JOIN direto por igualdade (não cartesiano): conta resolvidas em cada competência
         SELECT
           c.nu_comp,
           tv.total,
-          COUNT(DISTINCT pr.id) as resolvidas_nesta_comp
+          te.n_exclusao,
+          COUNT(DISTINCT pr.id) AS resolvidas_inc_alt,
+          COALESCE(ep.n_presente, 0) AS excl_presente
         FROM competencias c
         CROSS JOIN total_vinculos tv
+        CROSS JOIN total_exclusao te
         LEFT JOIN primeira_resolucao pr ON pr.comp_resolucao = c.nu_comp
-        GROUP BY c.nu_comp, tv.total
+        LEFT JOIN excl_no_espelho_por_comp ep ON ep.nu_comp = c.nu_comp
+        GROUP BY c.nu_comp, tv.total, te.n_exclusao, ep.n_presente
       )
-      -- Soma acumulada via window function (evita o ON 1=1 cartesiano)
+      -- Soma acumulada Inc+Alt via window; Exclusão = total menos o mínimo ainda-presente
+      -- até a competência atual (MIN garante monotonicidade mesmo com dados irregulares)
       SELECT
-        nu_comp as competencia,
+        nu_comp AS competencia,
         total,
-        SUM(resolvidas_nesta_comp) OVER (ORDER BY nu_comp) as resolvidas_acumuladas
+        SUM(resolvidas_inc_alt) OVER (ORDER BY nu_comp)
+          + GREATEST(
+              n_exclusao - MIN(excl_presente) OVER (ORDER BY nu_comp ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW),
+              0
+            ) AS resolvidas_acumuladas
       FROM resolvidas_por_comp
       ORDER BY nu_comp
     `;
 
-    // Top 10 Ocupações com Divergências
+    // Top 10 Ocupações com Divergências — idêntico ao stats (via CTE)
     const cboQuery = `
-      SELECT 
-        v.ds_cbo_ocupacao as cbo,
-        COUNT(DISTINCT v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')) as total,
-        COUNT(DISTINCT CASE 
-          WHEN e.co_cpf IS NOT NULL 
-          THEN v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')
-        END) as resolvidas
+      WITH ${resolvidasCTE}
+      SELECT
+        v.ds_cbo_ocupacao AS cbo,
+        COUNT(DISTINCT ${CHAVE_V}) AS total,
+        COUNT(DISTINCT r.chave) AS resolvidas
       FROM censo.vinculos v
       ${recenseamentoJoin}
-      LEFT JOIN censo.espelho_cnes e 
-        ON e.co_cpf = v.nu_cpf 
-        AND e.co_cnes = v.co_cnes
-        AND e.co_cbo = v.co_cbo_ocupacao
-        AND e.ind_vinculacao = v.nu_vinculacao
-        ${compFilter}
+      LEFT JOIN resolvidas_eq r ON r.chave = ${CHAVE_V}
       ${whereClause}
       ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
-        AND v.ds_cbo_ocupacao IS NOT NULL
-        AND v.ds_cbo_ocupacao != ''
+        AND v.ds_cbo_ocupacao IS NOT NULL AND v.ds_cbo_ocupacao != ''
       GROUP BY v.ds_cbo_ocupacao
       ORDER BY total DESC
       LIMIT 10
     `;
 
-    // Top 10 Estabelecimentos com Divergências
+    // Top 10 Estabelecimentos com Divergências — idêntico ao stats (via CTE)
     const cnesQuery = `
-      SELECT 
-        r.no_razao_social as estabelecimento,
+      WITH ${resolvidasCTE}
+      SELECT
+        rec.no_razao_social AS estabelecimento,
         v.co_cnes,
-        COUNT(DISTINCT v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')) as total,
-        COUNT(DISTINCT CASE 
-          WHEN e.co_cpf IS NOT NULL 
-          THEN v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')
-        END) as resolvidas
+        COUNT(DISTINCT ${CHAVE_V}) AS total,
+        COUNT(DISTINCT r.chave) AS resolvidas
       FROM censo.vinculos v
-      INNER JOIN censo.recenseamento r ON v.co_cnes = r.co_cnes
-      LEFT JOIN censo.espelho_cnes e 
-        ON e.co_cpf = v.nu_cpf 
-        AND e.co_cnes = v.co_cnes
-        AND e.co_cbo = v.co_cbo_ocupacao
-        AND e.ind_vinculacao = v.nu_vinculacao
-        ${compFilter}
+      INNER JOIN censo.recenseamento rec ON v.co_cnes = rec.co_cnes
+      LEFT JOIN resolvidas_eq r ON r.chave = ${CHAVE_V}
       ${whereClause}
       ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
-        AND r.no_razao_social IS NOT NULL
-      GROUP BY r.no_razao_social, v.co_cnes
+        AND rec.no_razao_social IS NOT NULL
+      GROUP BY rec.no_razao_social, v.co_cnes
       ORDER BY total DESC
       LIMIT 10
     `;
 
-    // Top 10 Ocupações com MENOR taxa de resolução (mais pendentes %)
+    // Top 10 Ocupações com MENOR taxa de resolução — idêntico ao stats (via CTE)
     const cboPendentesQuery = `
-      SELECT 
-        v.ds_cbo_ocupacao as cbo,
-        COUNT(DISTINCT v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')) as total,
-        COUNT(DISTINCT CASE 
-          WHEN e.co_cpf IS NOT NULL 
-          THEN v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')
-        END) as resolvidas,
-        COUNT(DISTINCT v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')) -
-        COUNT(DISTINCT CASE 
-          WHEN e.co_cpf IS NOT NULL 
-          THEN v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')
-        END) as pendentes,
-        CASE 
-          WHEN COUNT(DISTINCT v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')) > 0
-          THEN ROUND(
-            (COUNT(DISTINCT CASE 
-              WHEN e.co_cpf IS NOT NULL 
-              THEN v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')
-            END)::numeric / 
-            COUNT(DISTINCT v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, ''))::numeric * 100), 
-            1
-          )
+      WITH ${resolvidasCTE}
+      SELECT
+        v.ds_cbo_ocupacao AS cbo,
+        COUNT(DISTINCT ${CHAVE_V}) AS total,
+        COUNT(DISTINCT r.chave) AS resolvidas,
+        COUNT(DISTINCT ${CHAVE_V}) - COUNT(DISTINCT r.chave) AS pendentes,
+        CASE
+          WHEN COUNT(DISTINCT ${CHAVE_V}) > 0
+          THEN ROUND(COUNT(DISTINCT r.chave)::numeric / COUNT(DISTINCT ${CHAVE_V})::numeric * 100, 1)
           ELSE 0
-        END as taxa_resolucao
+        END AS taxa_resolucao
       FROM censo.vinculos v
       ${recenseamentoJoin}
-      LEFT JOIN censo.espelho_cnes e 
-        ON e.co_cpf = v.nu_cpf 
-        AND e.co_cnes = v.co_cnes
-        AND e.co_cbo = v.co_cbo_ocupacao
-        AND e.ind_vinculacao = v.nu_vinculacao
-        ${compFilter}
+      LEFT JOIN resolvidas_eq r ON r.chave = ${CHAVE_V}
       ${whereClause}
       ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
-        AND v.ds_cbo_ocupacao IS NOT NULL
-        AND v.ds_cbo_ocupacao != ''
+        AND v.ds_cbo_ocupacao IS NOT NULL AND v.ds_cbo_ocupacao != ''
       GROUP BY v.ds_cbo_ocupacao
-      HAVING COUNT(DISTINCT v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')) >= 5
+      HAVING COUNT(DISTINCT ${CHAVE_V}) >= 5
       ORDER BY taxa_resolucao ASC, total DESC
       LIMIT 10
     `;
 
-    // Top 10 Estabelecimentos com MENOR taxa de resolução (mais pendentes %)
+    // Top 10 Estabelecimentos com MENOR taxa de resolução — idêntico ao stats (via CTE)
     const cnesPendentesQuery = `
-      SELECT 
-        r.no_razao_social as estabelecimento,
+      WITH ${resolvidasCTE}
+      SELECT
+        rec.no_razao_social AS estabelecimento,
         v.co_cnes,
-        COUNT(DISTINCT v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')) as total,
-        COUNT(DISTINCT CASE 
-          WHEN e.co_cpf IS NOT NULL 
-          THEN v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')
-        END) as resolvidas,
-        COUNT(DISTINCT v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')) -
-        COUNT(DISTINCT CASE 
-          WHEN e.co_cpf IS NOT NULL 
-          THEN v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')
-        END) as pendentes,
-        CASE 
-          WHEN COUNT(DISTINCT v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')) > 0
-          THEN ROUND(
-            (COUNT(DISTINCT CASE 
-              WHEN e.co_cpf IS NOT NULL 
-              THEN v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')
-            END)::numeric / 
-            COUNT(DISTINCT v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, ''))::numeric * 100), 
-            1
-          )
+        COUNT(DISTINCT ${CHAVE_V}) AS total,
+        COUNT(DISTINCT r.chave) AS resolvidas,
+        COUNT(DISTINCT ${CHAVE_V}) - COUNT(DISTINCT r.chave) AS pendentes,
+        CASE
+          WHEN COUNT(DISTINCT ${CHAVE_V}) > 0
+          THEN ROUND(COUNT(DISTINCT r.chave)::numeric / COUNT(DISTINCT ${CHAVE_V})::numeric * 100, 1)
           ELSE 0
-        END as taxa_resolucao
+        END AS taxa_resolucao
       FROM censo.vinculos v
-      INNER JOIN censo.recenseamento r ON v.co_cnes = r.co_cnes
-      LEFT JOIN censo.espelho_cnes e 
-        ON e.co_cpf = v.nu_cpf 
-        AND e.co_cnes = v.co_cnes
-        AND e.co_cbo = v.co_cbo_ocupacao
-        AND e.ind_vinculacao = v.nu_vinculacao
-        ${compFilter}
+      INNER JOIN censo.recenseamento rec ON v.co_cnes = rec.co_cnes
+      LEFT JOIN resolvidas_eq r ON r.chave = ${CHAVE_V}
       ${whereClause}
       ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
-        AND r.no_razao_social IS NOT NULL
-      GROUP BY r.no_razao_social, v.co_cnes
-      HAVING COUNT(DISTINCT v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')) >= 5
+        AND rec.no_razao_social IS NOT NULL
+      GROUP BY rec.no_razao_social, v.co_cnes
+      HAVING COUNT(DISTINCT ${CHAVE_V}) >= 5
       ORDER BY taxa_resolucao ASC, total DESC
       LIMIT 10
     `;
@@ -1573,7 +1657,7 @@ app.get('/api/resolucao/agregados', async (req, res) => {
     // Timeout reduzido para 20s: falha rápido e libera a conexão para as demais queries
     let evolucao = { rows: [] };
     try {
-      evolucao = await queryComTimeout(evolucaoQuery, params, 20000);
+      evolucao = await queryComTimeout(evolucaoQuery, params, 120000);
     } catch (err) {
       console.warn('⚠️ evolucao ignorada (timeout/erro):', err.message);
     }
@@ -1583,7 +1667,7 @@ app.get('/api/resolucao/agregados', async (req, res) => {
 
     let evolucaoAcumulada = { rows: [] };
     try {
-      evolucaoAcumulada = await queryComTimeout(evolucaoAcumuladaQuery, params, 20000);
+      evolucaoAcumulada = await queryComTimeout(evolucaoAcumuladaQuery, params, 120000);
     } catch (err) {
       console.warn('⚠️ evolucaoAcumulada ignorada (timeout/erro):', err.message);
     }
