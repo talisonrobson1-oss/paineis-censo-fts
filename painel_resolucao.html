@@ -987,6 +987,8 @@ function renderCharts() {
     console.log('📊 Resolvidas:', resolvidas);
     console.log('📊 Total:', total);
     
+    const pendentes = resolvidas.map(r => Math.max(0, total - r));
+
     destroyChart('evolucao-acumulada');
     CH['evolucao-acumulada'] = new Chart(document.getElementById('c-evolucao-acumulada'), {
       type: 'line',
@@ -994,22 +996,35 @@ function renderCharts() {
         labels,
         datasets: [
           {
-            label: 'Resolvidas Acumuladas',
-            data: resolvidas,
-            borderColor: '#3fb950',
-            backgroundColor: 'rgba(63, 185, 80, 0.12)',
-            fill: true,
-            tension: 0.3,
-            pointRadius: 4,
-            pointHoverRadius: 6
-          },
-          {
             label: 'Total de Divergências',
             data: Array(labels.length).fill(total),
             borderColor: '#4a90e2',
             borderDash: [5, 5],
             fill: false,
-            pointRadius: 0
+            pointRadius: 0,
+            order: 3
+          },
+          {
+            label: 'Resolvidas Acumuladas',
+            data: resolvidas,
+            borderColor: '#3fb950',
+            backgroundColor: 'rgba(63, 185, 80, 0.10)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            order: 1
+          },
+          {
+            label: 'Pendentes',
+            data: pendentes,
+            borderColor: '#f0c040',
+            backgroundColor: 'rgba(240, 192, 64, 0.10)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            order: 2
           }
         ]
       },
