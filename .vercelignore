@@ -1,0 +1,4 @@
+APIv1-0/fiocruz-api/node_modules
+APIv1-0/fiocruz-api/.env
+*.log
+.claude/
