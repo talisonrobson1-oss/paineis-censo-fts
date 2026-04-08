@@ -387,12 +387,16 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
     </div>
   </div>
 
-  <!-- Operação x CNES -->
-  <div class="sec-label">Tipo de Operação do Censo</div>
+  <!-- Operação x CNES + Estratégia -->
+  <div class="sec-label">Tipo de Operação do Censo &amp; Estratégia</div>
   <div class="cgrid">
     <div class="ccard">
       <div class="ctitle"><span style="background:var(--green)"></span> Tipo de Operação (incluindo Não Alterados)</div>
       <div class="cwrap"><canvas id="c-op"></canvas></div>
+    </div>
+    <div class="ccard">
+      <div class="ctitle"><span style="background:var(--blue)"></span> Vínculos por Estratégia</div>
+      <div class="cwrap"><canvas id="c-estrategia"></canvas></div>
     </div>
   </div>
 
@@ -640,6 +644,7 @@ async function loadDataFromAPI() {
       // Transformar arrays em objetos
       op: {},
       op_cnes: data.operacaoCnes || [],
+      estrategia: data.estrategia || [],
       sexo: {},
       raca: {},
       identidade_genero: {},
@@ -987,6 +992,7 @@ async function reloadWithFilters() {
       D.op = {};
       data.operacao.forEach(r => { D.op[r.tipo] = parseInt(r.n); });
       D.op_cnes = data.operacaoCnes;
+      D.estrategia = data.estrategia || [];
       D.sexo = {};
       data.sexo.forEach(r => { D.sexo[r.sexo] = parseInt(r.n); });
       D.raca = {};
@@ -1154,6 +1160,43 @@ function renderCharts(){
           },
           x: {
             ticks: { color: '#7a9ab8' },
+            grid: { display: false }
+          }
+        }
+      }
+    });
+  }
+
+  // Estratégia (barras verticais)
+  if (D.estrategia && D.estrategia.length > 0) {
+    const sorted = [...D.estrategia].sort((a, b) => parseInt(b.n) - parseInt(a.n));
+    const labels = sorted.map(r => r.estrategia);
+    const vals = sorted.map(r => parseInt(r.n));
+    const colors = ['#4a90e2','#3fb950','#d29922','#f85149','#9b59b6','#ff7b72','#79c0ff','#56d364'];
+
+    destroyChart('estrategia');
+    CH['estrategia'] = new Chart(document.getElementById('c-estrategia'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          data: vals,
+          backgroundColor: colors,
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: { color: '#7a9ab8' },
+            grid: { color: '#2a4270' }
+          },
+          x: {
+            ticks: { color: '#7a9ab8', font: { size: 10 } },
             grid: { display: false }
           }
         }

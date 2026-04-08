@@ -735,12 +735,17 @@
   <!-- KPIs -->
   <div class="section-label">Indicadores Gerais</div>
   
-  <!-- Primeira linha: Estabelecimentos e Vínculos -->
-  <div class="kpi-row primeira-linha">
+  <!-- Primeira linha: Estabelecimentos, Distribuídos e Vínculos -->
+  <div class="kpi-row primeira-linha" style="grid-template-columns:1fr 1fr 1fr;">
     <div class="kpi-card" style="--card-accent: var(--accent)">
       <div class="kpi-label">Estabelecimentos</div>
       <div class="kpi-value" id="kpi-total">—</div>
       <div class="kpi-sub">no filtro atual</div>
+    </div>
+    <div class="kpi-card" style="--card-accent: var(--accent2)">
+      <div class="kpi-label">Estabelecimentos Distribuídos</div>
+      <div class="kpi-value" id="kpi-distribuidos">—</div>
+      <div class="kpi-sub">com recenseador atribuído</div>
     </div>
     <div class="kpi-card" style="--card-accent: var(--accent3)">
       <div class="kpi-label">Total de Vínculos</div>
@@ -1368,10 +1373,15 @@ function renderCharts() {
   
   // Gráfico 7: % Concluído por Recenseador
   if (D.recenseadores && D.recenseadores.length > 0) {
+    // KPI: total de estabelecimentos distribuídos (com recenseador)
+    const totalDistribuidos = D.recenseadores.reduce((sum, r) => sum + parseInt(r.total || 0), 0);
+    const elDist = document.getElementById('kpi-distribuidos');
+    if (elDist) elDist.textContent = totalDistribuidos.toLocaleString('pt-BR');
+
     const ctx = document.getElementById('chart-recenseador-pct');
     if (ctx) {
       const sorted = [...D.recenseadores]
-        .filter(r => parseInt(r.total) >= 10) // Apenas com 10+ estabelecimentos
+        .filter(r => parseInt(r.total) >= 10)
         .sort((a, b) => parseFloat(b.percentual) - parseFloat(a.percentual))
         .slice(0, 15);
       destroyChart('recenseador-pct');
@@ -1390,9 +1400,7 @@ function renderCharts() {
           indexAxis: 'y',
           responsive: true,
           maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false }
-          },
+          plugins: { legend: { display: false } },
           scales: {
             x: {
               max: 100,
@@ -1440,15 +1448,37 @@ async function loadTableData(page = 1, filters = {}) {
     // Renderizar tabela
     const tbody = document.getElementById('table-body');
     if (tbody) {
+      const situacaoBadge = (s) => {
+        const map = {
+          'Concluído':        'badge-concluido',
+          'Em Andamento':     'badge-andamento',
+          'Não Iniciado':     'badge-nao',
+          'Em Contato':       'badge-contato',
+          'Em Validação':     'badge-validacao',
+          'Recusado':         'badge-recusado',
+          'Devolvido':        'badge-devolvido',
+          'Inativo':          'badge-inativo'
+        };
+        const cls = map[s] || '';
+        return s ? `<span class="badge ${cls}">${s}</span>` : '—';
+      };
+      const fmtDate = (d) => {
+        if (!d) return '—';
+        try { return new Date(d).toLocaleDateString('pt-BR'); } catch { return d; }
+      };
       tbody.innerHTML = data.map(row => `
         <tr>
           <td>${row.co_cnes || '—'}</td>
           <td>${row.no_fantasia || '—'}</td>
           <td>${row.sg_uf || '—'}</td>
           <td>${row.no_municipio || '—'}</td>
+          <td>${row.no_regional_saude || '—'}</td>
           <td>${row.esfera || '—'}</td>
-          <td>${row.situacao_recenseamento || '—'}</td>
+          <td>${row.vinculado_sus === 'S' ? 'Sim' : row.vinculado_sus === 'N' ? 'Não' : '—'}</td>
+          <td>${row.total_vinculos != null ? parseInt(row.total_vinculos).toLocaleString('pt-BR') : '—'}</td>
           <td>${row.recenseador || '—'}</td>
+          <td>${situacaoBadge(row.situacao_recenseamento)}</td>
+          <td>${fmtDate(row.dt_atualizacao)}</td>
         </tr>
       `).join('');
     }

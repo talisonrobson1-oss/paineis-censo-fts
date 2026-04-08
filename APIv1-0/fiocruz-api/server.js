@@ -243,8 +243,7 @@ app.get('/api/estabelecimentos/por-situacao', async (req, res) => {
 app.get('/api/estabelecimentos/por-uf', async (req, res) => {
   try {
     const { whereClause, params } = buildEstabelecimentosWhere(req.query, [
-      'sg_uf IS NOT NULL',
-      "situacao_recenseamento = 'Concluído'"
+      'sg_uf IS NOT NULL'
     ]);
     
     const query = `
@@ -271,8 +270,7 @@ app.get('/api/estabelecimentos/por-uf', async (req, res) => {
 app.get('/api/estabelecimentos/por-esfera', async (req, res) => {
   try {
     const { whereClause, params } = buildEstabelecimentosWhere(req.query, [
-      'esfera IS NOT NULL',
-      "situacao_recenseamento = 'Concluído'"
+      'esfera IS NOT NULL'
     ]);
     
     const query = `
@@ -300,8 +298,7 @@ app.get('/api/estabelecimentos/por-esfera', async (req, res) => {
 app.get('/api/estabelecimentos/por-macro', async (req, res) => {
   try {
     const { whereClause, params } = buildEstabelecimentosWhere(req.query, [
-      'no_macrorregional IS NOT NULL',
-      "situacao_recenseamento = 'Concluído'"
+      'no_macrorregional IS NOT NULL'
     ]);
     
     const query = `
@@ -391,14 +388,18 @@ app.get('/api/estabelecimentos/lista', async (req, res) => {
     
     // Get paginated data com filtros
     const dataQuery = `
-      SELECT 
+      SELECT
         co_cnes,
         no_fantasia,
         sg_uf,
         no_municipio,
+        no_regional_saude,
         esfera,
+        vinculado_sus,
+        total_vinculos,
+        recenseador,
         situacao_recenseamento,
-        recenseador
+        dt_atualizacao
       FROM censo.recenseamento
       ${whereClause}
       ORDER BY no_fantasia
@@ -761,9 +762,9 @@ app.get('/api/vinculos/agregados', async (req, res) => {
     // Pequeno delay para não sobrecarregar pool
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    console.log('📊 Executando LOTE 3 (3 queries)...');
-    // LOTE 3: Queries finais (3 queries)
-    const [vinculacao, cargaHoraria, expectativa] = await Promise.all([
+    console.log('📊 Executando LOTE 3 (4 queries)...');
+    // LOTE 3: Queries finais (4 queries)
+    const [vinculacao, cargaHoraria, expectativa, estrategia] = await Promise.all([
       // Tipo de Vinculação - Top 15
       executeQuery(`
         SELECT vinculacao, COUNT(*) as n
@@ -830,7 +831,23 @@ app.get('/api/vinculos/agregados', async (req, res) => {
         FROM censo.vinculos
         ${whereClause ? whereClause + " AND no_expectativa_profissional IS NOT NULL AND no_expectativa_profissional != ''" : "WHERE no_expectativa_profissional IS NOT NULL AND no_expectativa_profissional != ''"}
         GROUP BY no_expectativa_profissional
-      `)
+      `),
+
+      // Estratégia (JOIN com recenseamento — qualifica co_cnes para evitar ambiguidade)
+      (() => {
+        const estrategiaWhere = whereClause
+          ? whereClause.replace(/\bco_cnes\b/g, 'v.co_cnes') + " AND r.estrategia IS NOT NULL AND r.estrategia != ''"
+          : "WHERE r.estrategia IS NOT NULL AND r.estrategia != ''";
+        const sql = `
+          SELECT r.estrategia, COUNT(*) as n
+          FROM censo.vinculos v
+          INNER JOIN censo.recenseamento r ON v.co_cnes = r.co_cnes
+          ${estrategiaWhere}
+          GROUP BY r.estrategia
+          ORDER BY n DESC
+        `;
+        return params.length > 0 ? pool.query(sql, params) : pool.query(sql);
+      })()
     ]);
 
     console.log('✅ LOTE 3 concluído');
@@ -847,7 +864,8 @@ app.get('/api/vinculos/agregados', async (req, res) => {
       cbo: cbo.rows,
       vinculacao: vinculacao.rows,
       cargaHoraria: cargaHoraria.rows,
-      expectativa: expectativa.rows
+      expectativa: expectativa.rows,
+      estrategia: estrategia.rows
     });
   } catch (err) {
     console.error('Erro em /api/vinculos/agregados:', err);
