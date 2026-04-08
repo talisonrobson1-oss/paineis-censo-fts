@@ -952,73 +952,85 @@ app.get('/api/vinculos/tabela', async (req, res) => {
 
 /**
  * GET /api/vinculos/filtros
+ * Cache em memória por 60 min — valores mudam raramente e as queries são pesadas.
  */
+let _filtrosVinculosCache = null;
+let _filtrosVinculosCacheTs = 0;
+const FILTROS_VINCULOS_TTL = 60 * 60 * 1000; // 60 minutos
+
 app.get('/api/vinculos/filtros', async (req, res) => {
+  // Servir do cache se ainda válido
+  if (_filtrosVinculosCache && (Date.now() - _filtrosVinculosCacheTs) < FILTROS_VINCULOS_TTL) {
+    console.log('📦 /api/vinculos/filtros — servindo do cache');
+    return res.json(_filtrosVinculosCache);
+  }
+
   try {
+    console.log('🔍 /api/vinculos/filtros — executando queries...');
+
     // LOTE 1: Filtros principais (3 queries)
     const [escolaridade, raca, cine] = await Promise.all([
       pool.query(`
-        SELECT DISTINCT 
+        SELECT DISTINCT
           co_escolaridade as codigo,
           ds_escolaridade as descricao,
           co_escolaridade || ' - ' || ds_escolaridade as valor
         FROM censo.vinculos
-        WHERE co_escolaridade IS NOT NULL AND ds_escolaridade IS NOT NULL 
+        WHERE co_escolaridade IS NOT NULL AND ds_escolaridade IS NOT NULL
           AND co_escolaridade != '' AND ds_escolaridade != ''
         ORDER BY co_escolaridade
       `),
       pool.query(`
-        SELECT DISTINCT 
-          CASE 
-            WHEN ds_raca_cor IS NULL OR ds_raca_cor = '' OR UPPER(ds_raca_cor) = 'SEM INFORMACAO' 
+        SELECT DISTINCT
+          CASE
+            WHEN ds_raca_cor IS NULL OR ds_raca_cor = '' OR UPPER(ds_raca_cor) = 'SEM INFORMACAO'
             THEN 'Sem informação'
             ELSE ds_raca_cor
           END as valor
         FROM censo.vinculos
-        ORDER BY 
-          CASE 
-            WHEN ds_raca_cor IS NULL OR ds_raca_cor = '' OR UPPER(ds_raca_cor) = 'SEM INFORMACAO' 
-            THEN 'Sem informação'
-            ELSE ds_raca_cor
-          END
+        WHERE ds_raca_cor IS NOT NULL
+        ORDER BY 1
       `),
       pool.query(`
-        SELECT DISTINCT 
+        SELECT DISTINCT
           co_cine as codigo,
           ds_cine as descricao,
           co_cine || ' - ' || ds_cine as valor
         FROM censo.vinculos
-        WHERE co_cine IS NOT NULL AND ds_cine IS NOT NULL 
+        WHERE co_cine IS NOT NULL AND ds_cine IS NOT NULL
           AND co_cine != '' AND ds_cine != ''
         ORDER BY co_cine
+        LIMIT 500
       `)
     ]);
-    
+
     // LOTE 2: Filtros restantes (3 queries)
     const [cbo, vinculo, estabelecimentos] = await Promise.all([
       pool.query(`
-        SELECT DISTINCT 
+        SELECT DISTINCT
           co_cbo_ocupacao as codigo,
           ds_cbo_ocupacao as descricao,
           co_cbo_ocupacao || ' - ' || ds_cbo_ocupacao as valor
         FROM censo.vinculos
-        WHERE co_cbo_ocupacao IS NOT NULL AND ds_cbo_ocupacao IS NOT NULL 
+        WHERE co_cbo_ocupacao IS NOT NULL AND ds_cbo_ocupacao IS NOT NULL
           AND co_cbo_ocupacao != '' AND ds_cbo_ocupacao != ''
         ORDER BY co_cbo_ocupacao
+        LIMIT 1000
       `),
       pool.query(`
-        SELECT DISTINCT 
+        SELECT DISTINCT
           nu_vinculacao as codigo,
           vinculacao as descricao,
           nu_vinculacao || ' - ' || vinculacao as valor
         FROM censo.vinculos
-        WHERE nu_vinculacao IS NOT NULL AND vinculacao IS NOT NULL 
+        WHERE nu_vinculacao IS NOT NULL AND vinculacao IS NOT NULL
           AND nu_vinculacao != '' AND vinculacao != ''
         ORDER BY nu_vinculacao
+        LIMIT 200
       `),
       pool.query(`
-        SELECT DISTINCT 
-          r.co_cnes as codigo, 
+        SELECT DISTINCT
+          r.co_cnes as codigo,
           r.no_razao_social as descricao,
           r.co_cnes || ' - ' || r.no_razao_social as valor
         FROM censo.recenseamento r
@@ -1028,14 +1040,21 @@ app.get('/api/vinculos/filtros', async (req, res) => {
       `)
     ]);
 
-    res.json({
+    const resultado = {
       escolaridade: escolaridade.rows.map(r => ({ codigo: r.codigo, descricao: r.descricao, valor: r.valor })),
       raca: raca.rows.map(r => r.valor),
       cine: cine.rows.map(r => ({ codigo: r.codigo, descricao: r.descricao, valor: r.valor })),
       cbo: cbo.rows.map(r => ({ codigo: r.codigo, descricao: r.descricao, valor: r.valor })),
       vinculo: vinculo.rows.map(r => ({ codigo: r.codigo, descricao: r.descricao, valor: r.valor })),
       estabelecimentos: estabelecimentos.rows.map(r => ({ codigo: r.codigo, descricao: r.descricao, valor: r.valor }))
-    });
+    };
+
+    // Armazena no cache
+    _filtrosVinculosCache = resultado;
+    _filtrosVinculosCacheTs = Date.now();
+    console.log('✅ /api/vinculos/filtros — cache atualizado');
+
+    res.json(resultado);
   } catch (err) {
     console.error('Erro em /api/vinculos/filtros:', err);
     res.status(500).json({ error: 'Erro ao buscar filtros', details: err.message });
