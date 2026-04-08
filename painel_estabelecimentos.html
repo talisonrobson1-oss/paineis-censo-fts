@@ -6,6 +6,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FioCruz — Painel de Monitoramento do Recenseamento</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- Select2 para autocomplete nos filtros -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <style>
 
   /* LOADING STATE */
@@ -171,37 +175,43 @@
   }
 
   /* FILTERS */
-  .filters-bar {
+  .fbar {
     background: var(--surface2);
     border-bottom: 1px solid var(--border);
-    padding: 20px 32px;
+    padding: 14px 32px;
     display: flex;
-    flex-direction: column;
-    gap: 20px;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: flex-start;
   }
 
   .filter-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    flex: 1;
+    min-width: 400px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
   }
 
   .filter-section-title {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 1.5px;
     color: var(--accent);
-    padding-bottom: 8px;
+    padding-bottom: 6px;
     border-bottom: 1px solid var(--border);
-    margin-bottom: 4px;
   }
 
   .filter-section-content {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 12px;
-    flex-wrap: wrap;
-    align-items: flex-end;
+    padding-top: 4px;
   }
 
   .filter-group {
@@ -247,6 +257,47 @@
   }
 
   .btn-reset:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* SELECT2 — tema escuro idêntico aos demais painéis */
+  .select2-container--default .select2-selection--single {
+    background-color: var(--surface) !important;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    height: 36px;
+    padding: 6px 12px;
+  }
+  .select2-container--default .select2-selection--single .select2-selection__rendered {
+    color: var(--text);
+    line-height: 24px;
+    padding: 0;
+  }
+  .select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 34px;
+  }
+  .select2-dropdown {
+    background-color: var(--surface) !important;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .select2-container--default .select2-results__option {
+    color: var(--text);
+    padding: 8px 12px;
+    background-color: var(--surface);
+  }
+  .select2-container--default .select2-results__option--highlighted[aria-selected] {
+    background-color: var(--accent) !important;
+    color: white;
+  }
+  .select2-container--default .select2-search--dropdown .select2-search__field {
+    background-color: var(--surface) !important;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px;
+    border-radius: 4px;
+  }
+  .select2-container { width: 100% !important; }
+  .select2-results { background-color: var(--surface); }
+  .select2-results__options { background-color: var(--surface); }
 
   /* MAIN */
   main {
@@ -580,7 +631,7 @@
     .charts-grid, .charts-grid.three, .rank-grid { grid-template-columns: 1fr; }
     .chart-card.wide { grid-column: span 1; }
     main { padding: 16px; }
-    .filters-bar { padding: 12px 16px; }
+    .fbar { padding: 12px 16px; }
     header { padding: 12px 16px; }
   }
 </style>
@@ -606,10 +657,10 @@
   </div>
 </header>
 
-<div class="filters-bar">
+<div class="fbar">
   <!-- Seção 1: Localização -->
   <div class="filter-section">
-    <div class="filter-section-title">🗺️ Localização</div>
+    <div class="filter-section-title">Localização</div>
     <div class="filter-section-content">
       <div class="filter-group">
         <label>UF</label>
@@ -636,7 +687,7 @@
 
   <!-- Seção 2: Trabalho no Censo -->
   <div class="filter-section">
-    <div class="filter-section-title">📋 Trabalho no Censo</div>
+    <div class="filter-section-title">Trabalho no Censo</div>
     <div class="filter-section-content">
       <div class="filter-group">
         <label>Situação</label>
@@ -646,12 +697,16 @@
         <label>Recenseador</label>
         <select id="f-recenseador"><option value="">Todos</option></select>
       </div>
+      <div class="filter-group">
+        <label>Estratégia</label>
+        <select id="f-estrategia"><option value="">Todas</option></select>
+      </div>
     </div>
   </div>
 
   <!-- Seção 3: Características do Estabelecimento -->
   <div class="filter-section">
-    <div class="filter-section-title">🏥 Características do Estabelecimento</div>
+    <div class="filter-section-title">Características do Estabelecimento</div>
     <div class="filter-section-content">
       <div class="filter-group">
         <label>Vínculo ao SUS</label>
@@ -665,9 +720,15 @@
         <label>Esfera Administrativa</label>
         <select id="f-esfera"><option value="">Todas</option></select>
       </div>
-      <button class="btn-reset" onclick="resetFilters()">↺ Limpar Filtros</button>
+      <div class="filter-group">
+        <label>Tipo de Estabelecimento</label>
+        <select id="f-tp-unidade"><option value="">Todos</option></select>
+      </div>
     </div>
   </div>
+
+  <!-- Botão Limpar (fora das seções, alinhado ao final) -->
+  <button class="btn-reset" onclick="resetFilters()" style="align-self:flex-end;margin-bottom:8px;">↺ Limpar</button>
 </div>
 
 <main>
@@ -906,7 +967,9 @@ function populateFilters() {
     'f-municipio': D.filtros.municipio || [],
     'f-situacao': D.filtros.situacao || [],
     'f-esfera': D.filtros.esfera || [],
-    'f-recenseador': D.filtros.recenseador || []
+    'f-recenseador': D.filtros.recenseador || [],
+    'f-estrategia': D.filtros.estrategia || [],
+    'f-tp-unidade': D.filtros.tp_unidade || []
   };
   
   Object.entries(filters).forEach(([id, values]) => {
@@ -942,26 +1005,47 @@ function populateFilters() {
 }
 
 // ==========================================
+// SELECT2 — AUTOCOMPLETE
+// ==========================================
+function initializeSelect2() {
+  const filterIds = [
+    'f-uf', 'f-macro', 'f-regional', 'f-municipio',
+    'f-situacao', 'f-recenseador', 'f-estrategia',
+    'f-sus', 'f-esfera', 'f-tp-unidade'
+  ];
+
+  filterIds.forEach(id => {
+    const $select = $('#' + id);
+    if ($select.length) {
+      if ($select.data('select2')) $select.select2('destroy');
+      $select.select2({
+        placeholder: 'Selecione...',
+        allowClear: true,
+        width: '100%',
+        language: {
+          noResults: () => 'Nenhum resultado encontrado',
+          searching: () => 'Buscando...'
+        }
+      });
+      // Evento Select2
+      $select.on('select2:select select2:clear', async function() {
+        console.log(`🔄 Filtro ${id} alterado para:`, $(this).val());
+        await reloadWithFilters();
+      });
+    }
+  });
+
+  console.log('✅ Select2 (autocomplete) inicializado em todos os filtros');
+}
+
+// ==========================================
 // INICIALIZAR PAINEL
 // ==========================================
 function initializePainel() {
   updateKPIs();
   renderCharts();
-  
-  // Adicionar event listeners aos filtros
-  const filterIds = ['f-uf', 'f-macro', 'f-regional', 'f-municipio', 'f-situacao', 'f-recenseador', 'f-sus', 'f-esfera'];
-  
-  filterIds.forEach(id => {
-    const select = document.getElementById(id);
-    if (select) {
-      select.addEventListener('change', async () => {
-        console.log(`🔄 Filtro ${id} alterado para:`, select.value);
-        await reloadWithFilters();
-      });
-    }
-  });
-  
-  console.log('✅ Event listeners dos filtros configurados');
+  initializeSelect2();
+  console.log('✅ Painel inicializado');
 }
 
 // ==========================================
@@ -971,16 +1055,19 @@ async function reloadWithFilters() {
   try {
     showLoading('Aplicando filtros...');
     
-    // Coletar valores dos filtros
+    // Coletar valores dos filtros (compatível com Select2 e native)
+    const gv = id => ($('#' + id).val() || '');
     const filters = {
-      uf: document.getElementById('f-uf')?.value || '',
-      macrorregiao: document.getElementById('f-macro')?.value || '',
-      regional: document.getElementById('f-regional')?.value || '',
-      municipio: document.getElementById('f-municipio')?.value || '',
-      situacao: document.getElementById('f-situacao')?.value || '',
-      recenseador: document.getElementById('f-recenseador')?.value || '',
-      sus: document.getElementById('f-sus')?.value || '',
-      esfera: document.getElementById('f-esfera')?.value || ''
+      uf:          gv('f-uf'),
+      macrorregiao:gv('f-macro'),
+      regional:    gv('f-regional'),
+      municipio:   gv('f-municipio'),
+      situacao:    gv('f-situacao'),
+      recenseador: gv('f-recenseador'),
+      estrategia:  gv('f-estrategia'),
+      sus:         gv('f-sus'),
+      esfera:      gv('f-esfera'),
+      tp_unidade:  gv('f-tp-unidade')
     };
     
     // Construir query string
@@ -1393,6 +1480,26 @@ function previousPage() {
 
 function nextPage() {
   loadTableData(currentPage + 1);
+}
+
+// ==========================================
+// LIMPAR FILTROS
+// ==========================================
+async function resetFilters() {
+  const allIds = [
+    'f-uf', 'f-macro', 'f-regional', 'f-municipio',
+    'f-situacao', 'f-recenseador', 'f-estrategia',
+    'f-sus', 'f-esfera', 'f-tp-unidade'
+  ];
+  allIds.forEach(id => {
+    const $el = $('#' + id);
+    if ($el.data('select2')) {
+      $el.val('').trigger('change.select2'); // limpa Select2 sem disparar reload
+    } else if ($el.length) {
+      $el.val('');
+    }
+  });
+  await reloadWithFilters();
 }
 
 // ==========================================

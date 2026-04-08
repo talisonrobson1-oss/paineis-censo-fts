@@ -111,11 +111,11 @@ pool.query('SELECT NOW()', (err, res) => {
  * Helper: Construir WHERE clause a partir de filtros
  */
 function buildEstabelecimentosWhere(query, additionalConditions = []) {
-  const { uf, macrorregiao, regional, municipio, situacao, recenseador, sus, esfera } = query;
+  const { uf, macrorregiao, regional, municipio, situacao, recenseador, sus, esfera, estrategia, tp_unidade } = query;
   const conditions = [...additionalConditions];
   const params = [];
   let paramCount = 1;
-  
+
   if (uf) {
     conditions.push(`sg_uf = $${paramCount++}`);
     params.push(uf);
@@ -140,6 +140,10 @@ function buildEstabelecimentosWhere(query, additionalConditions = []) {
     conditions.push(`recenseador = $${paramCount++}`);
     params.push(recenseador);
   }
+  if (estrategia) {
+    conditions.push(`estrategia = $${paramCount++}`);
+    params.push(estrategia);
+  }
   if (sus) {
     conditions.push(`vinculado_sus = $${paramCount++}`);
     params.push(sus);
@@ -148,7 +152,11 @@ function buildEstabelecimentosWhere(query, additionalConditions = []) {
     conditions.push(`esfera = $${paramCount++}`);
     params.push(esfera);
   }
-  
+  if (tp_unidade) {
+    conditions.push(`tp_unidade = $${paramCount++}`);
+    params.push(tp_unidade);
+  }
+
   return {
     whereClause: conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '',
     params,
@@ -420,7 +428,7 @@ app.get('/api/estabelecimentos/lista', async (req, res) => {
  */
 app.get('/api/estabelecimentos/filtros', async (req, res) => {
   try {
-    const [macro, regional, municipio, situacao, esfera, recenseador] = await Promise.all([
+    const [macro, regional, municipio, situacao, esfera, recenseador, estrategia, tp_unidade] = await Promise.all([
       pool.query(`
         SELECT DISTINCT no_macrorregional as valor
         FROM censo.recenseamento
@@ -456,6 +464,18 @@ app.get('/api/estabelecimentos/filtros', async (req, res) => {
         FROM censo.recenseamento
         WHERE recenseador IS NOT NULL
         ORDER BY recenseador
+      `),
+      pool.query(`
+        SELECT DISTINCT estrategia as valor
+        FROM censo.recenseamento
+        WHERE estrategia IS NOT NULL AND estrategia != ''
+        ORDER BY estrategia
+      `),
+      pool.query(`
+        SELECT DISTINCT tp_unidade as valor
+        FROM censo.recenseamento
+        WHERE tp_unidade IS NOT NULL AND tp_unidade != ''
+        ORDER BY tp_unidade
       `)
     ]);
 
@@ -465,7 +485,9 @@ app.get('/api/estabelecimentos/filtros', async (req, res) => {
       municipio: municipio.rows.map(r => r.valor),
       situacao: situacao.rows.map(r => r.valor),
       esfera: esfera.rows.map(r => r.valor),
-      recenseador: recenseador.rows.map(r => r.valor)
+      recenseador: recenseador.rows.map(r => r.valor),
+      estrategia: estrategia.rows.map(r => r.valor),
+      tp_unidade: tp_unidade.rows.map(r => r.valor)
     });
   } catch (err) {
     console.error('Erro em /api/estabelecimentos/filtros:', err);
