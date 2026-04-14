@@ -12,7 +12,36 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const fs   = require('fs');
+const path = require('path');
 require('dotenv').config();
+
+// ==========================================
+// REGIONALIZAÇÃO DF — carregado em memória
+// ==========================================
+// Mapas: nome_da_região → [cnes1, cnes2, ...]
+const dfRegionSaudeMap = {}; // Região de Saúde (DF)
+const dfRegionAdmMap   = {}; // Região Administrativa / Município (DF)
+
+(function loadDFRegionalizacao() {
+  const csvPath = path.join(__dirname, 'data', 'cnes-df-regionalizacao.csv');
+  try {
+    const lines = fs.readFileSync(csvPath, 'utf8').split('\n');
+    for (let i = 1; i < lines.length; i++) {          // pula o cabeçalho
+      const cols = lines[i].trim().split(';');
+      if (cols.length < 3) continue;
+      const [cnes, regSaude, regAdm] = cols.map(c => c.trim());
+      if (!cnes) continue;
+      if (!dfRegionSaudeMap[regSaude]) dfRegionSaudeMap[regSaude] = [];
+      dfRegionSaudeMap[regSaude].push(cnes);
+      if (!dfRegionAdmMap[regAdm]) dfRegionAdmMap[regAdm] = [];
+      dfRegionAdmMap[regAdm].push(cnes);
+    }
+    console.log(`✓ Regionalização DF: ${Object.keys(dfRegionSaudeMap).length} regiões de saúde, ${Object.keys(dfRegionAdmMap).length} regiões administrativas`);
+  } catch (err) {
+    console.warn('⚠ Arquivo de regionalização DF não encontrado:', csvPath, '—', err.message);
+  }
+})();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -111,7 +140,7 @@ pool.query('SELECT NOW()', (err, res) => {
  * Helper: Construir WHERE clause a partir de filtros
  */
 function buildEstabelecimentosWhere(query, additionalConditions = []) {
-  const { uf, macrorregiao, regional, municipio, situacao, recenseador, sus, esfera, estrategia, tp_unidade } = query;
+  const { uf, macrorregiao, regional, municipio, situacao, recenseador, sus, esfera, estrategia, tp_unidade, regiao_saude_df, regiao_adm_df } = query;
   const conditions = [...additionalConditions];
   const params = [];
   let paramCount = 1;
@@ -157,6 +186,22 @@ function buildEstabelecimentosWhere(query, additionalConditions = []) {
     params.push(tp_unidade);
   }
 
+  // Filtros de Regionalização DF (lookup em memória → filtra por lista de CNES)
+  if (regiao_saude_df) {
+    const cnesList = dfRegionSaudeMap[regiao_saude_df] || [];
+    if (cnesList.length > 0) {
+      conditions.push(`co_cnes::text = ANY($${paramCount++})`);
+      params.push(cnesList);
+    }
+  }
+  if (regiao_adm_df) {
+    const cnesList = dfRegionAdmMap[regiao_adm_df] || [];
+    if (cnesList.length > 0) {
+      conditions.push(`co_cnes::text = ANY($${paramCount++})`);
+      params.push(cnesList);
+    }
+  }
+
   return {
     whereClause: conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '',
     params,
@@ -176,26 +221,30 @@ app.get('/api/estabelecimentos/stats', async (req, res) => {
     const { whereClause, params } = buildEstabelecimentosWhere(req.query);
     
     const query = `
-      SELECT 
+      SELECT
         COUNT(*) as total_estabelecimentos,
         COUNT(DISTINCT sg_uf) as total_ufs,
         COUNT(DISTINCT situacao_recenseamento) as total_situacoes,
         SUM(CASE WHEN situacao_recenseamento = 'Concluído' THEN 1 ELSE 0 END) as recenseados,
         SUM(CASE WHEN situacao_recenseamento != 'Concluído' OR situacao_recenseamento IS NULL THEN 1 ELSE 0 END) as pendentes,
-        COALESCE(SUM(
-          CASE 
-            WHEN total_vinculos IS NOT NULL AND total_vinculos != '' 
-            THEN FLOOR(CAST(total_vinculos AS NUMERIC))
-            ELSE 0
-          END
-        ), 0) as total_vinculos
-      FROM censo.recenseamento
+        COALESCE(SUM(total_vinculos), 0) as total_vinculos
+      FROM censo.recenseamento_nova
       ${whereClause};
     `;
-    
-    const { rows } = await pool.query(query, params);
+
+    // Contar vínculos recenseados na tabela recenseados_nova filtrada pelo mesmo WHERE
+    const vinculosRecenseadosQuery = `
+      SELECT COUNT(*) AS n
+      FROM censo.recenseados_nova
+      WHERE co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova ${whereClause})
+    `;
+
+    const [{ rows }, { rows: vrRows }] = await Promise.all([
+      pool.query(query, params),
+      pool.query(vinculosRecenseadosQuery, params)
+    ]);
     const stats = rows[0];
-    
+
     // Converter para números inteiros
     res.json({
       total_estabelecimentos: parseInt(stats.total_estabelecimentos) || 0,
@@ -203,7 +252,8 @@ app.get('/api/estabelecimentos/stats', async (req, res) => {
       total_situacoes: parseInt(stats.total_situacoes) || 0,
       recenseados: parseInt(stats.recenseados) || 0,
       pendentes: parseInt(stats.pendentes) || 0,
-      total_vinculos: parseInt(stats.total_vinculos) || 0
+      total_vinculos: parseInt(stats.total_vinculos) || 0,
+      total_vinculos_recenseados: parseInt(vrRows[0].n) || 0
     });
   } catch (err) {
     console.error('Erro em /api/estabelecimentos/stats:', err);
@@ -223,7 +273,7 @@ app.get('/api/estabelecimentos/por-situacao', async (req, res) => {
         COALESCE(situacao_recenseamento, 'Não informado') as situacao,
         COUNT(*) as quantidade,
         ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentual
-      FROM censo.recenseamento
+      FROM censo.recenseamento_nova
       ${whereClause}
       GROUP BY situacao_recenseamento
       ORDER BY quantidade DESC;
@@ -250,7 +300,7 @@ app.get('/api/estabelecimentos/por-uf', async (req, res) => {
       SELECT 
         sg_uf as uf,
         COUNT(*) as quantidade
-      FROM censo.recenseamento
+      FROM censo.recenseamento_nova
       ${whereClause}
       GROUP BY sg_uf
       ORDER BY quantidade DESC;
@@ -278,7 +328,7 @@ app.get('/api/estabelecimentos/por-esfera', async (req, res) => {
         esfera,
         COUNT(*) as quantidade,
         COUNT(*) * 100.0 / SUM(COUNT(*)) OVER () as percentual
-      FROM censo.recenseamento
+      FROM censo.recenseamento_nova
       ${whereClause}
       GROUP BY esfera
       ORDER BY quantidade DESC;
@@ -306,7 +356,7 @@ app.get('/api/estabelecimentos/por-macro', async (req, res) => {
         no_macrorregional as macrorregiao,
         COUNT(*) as quantidade,
         COUNT(*) * 100.0 / SUM(COUNT(*)) OVER () as percentual
-      FROM censo.recenseamento
+      FROM censo.recenseamento_nova
       ${whereClause}
       GROUP BY no_macrorregional
       ORDER BY quantidade DESC;
@@ -321,27 +371,94 @@ app.get('/api/estabelecimentos/por-macro', async (req, res) => {
 });
 
 /**
+ * Constrói um CASE WHEN co_cnes::text = ANY($N) THEN 'Região X' ... ELSE fallback END
+ * a partir de um mapa { regiao: [cnes...] } e do índice inicial de parâmetro.
+ * Retorna { caseExpr, dfParams } para ser anexado aos params existentes.
+ */
+function buildDFCaseExpr(fallbackCol, dfMap, startParamIdx) {
+  const entries = Object.entries(dfMap);
+  if (entries.length === 0) return { caseExpr: fallbackCol, dfParams: [] };
+  let pi = startParamIdx;
+  const dfParams = [];
+  const whenClauses = entries.map(([region, cnesList]) => {
+    dfParams.push(cnesList);
+    return `WHEN co_cnes::text = ANY($${pi++}) THEN '${region.replace(/'/g, "''")}'`;
+  });
+  return {
+    caseExpr: `CASE ${whenClauses.join(' ')} ELSE ${fallbackCol} END`,
+    dfParams
+  };
+}
+
+/**
  * GET /api/estabelecimentos/por-regional
+ * Enriquece com classificação DF via CASE expression dinâmico.
  */
 app.get('/api/estabelecimentos/por-regional', async (req, res) => {
   try {
+    const { whereClause, params } = buildEstabelecimentosWhere(req.query);
+    const { caseExpr, dfParams } = buildDFCaseExpr('no_regional_saude', dfRegionSaudeMap, params.length + 1);
+
     const query = `
-      SELECT 
-        no_regional_saude as regional,
-        COUNT(*) as total,
-        SUM(CASE WHEN situacao_recenseamento = 'Concluído' THEN 1 ELSE 0 END) as concluidos,
-        ROUND(SUM(CASE WHEN situacao_recenseamento = 'Concluído' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) as percentual
-      FROM censo.recenseamento
-      WHERE no_regional_saude IS NOT NULL
-      GROUP BY no_regional_saude
+      WITH enriched AS (
+        SELECT
+          ${caseExpr} AS regional,
+          sg_uf,
+          situacao_recenseamento
+        FROM censo.recenseamento_nova
+        ${whereClause}
+      )
+      SELECT
+        regional,
+        sg_uf,
+        COUNT(*) AS total,
+        SUM(CASE WHEN situacao_recenseamento = 'Concluído' THEN 1 ELSE 0 END) AS concluidos,
+        ROUND(SUM(CASE WHEN situacao_recenseamento = 'Concluído' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) AS percentual
+      FROM enriched
+      WHERE regional IS NOT NULL
+      GROUP BY regional, sg_uf
       ORDER BY percentual DESC;
     `;
-    
-    const { rows } = await pool.query(query);
+    const { rows } = await pool.query(query, [...params, ...dfParams]);
     res.json(rows);
   } catch (err) {
     console.error('Erro em /api/estabelecimentos/por-regional:', err);
     res.status(500).json({ error: 'Erro ao buscar dados por regional', details: err.message });
+  }
+});
+
+/**
+ * GET /api/estabelecimentos/por-municipio
+ * Enriquece com Região Administrativa DF via CASE expression dinâmico.
+ */
+app.get('/api/estabelecimentos/por-municipio', async (req, res) => {
+  try {
+    const { whereClause, params } = buildEstabelecimentosWhere(req.query);
+    const { caseExpr, dfParams } = buildDFCaseExpr('no_municipio', dfRegionAdmMap, params.length + 1);
+
+    const query = `
+      WITH enriched AS (
+        SELECT
+          ${caseExpr} AS municipio,
+          sg_uf
+        FROM censo.recenseamento_nova
+        ${whereClause}
+      )
+      SELECT
+        municipio,
+        sg_uf,
+        COUNT(*) AS quantidade
+      FROM enriched
+      WHERE municipio IS NOT NULL
+      GROUP BY municipio, sg_uf
+      ORDER BY quantidade DESC
+      LIMIT 100;
+    `;
+    const { rows } = await pool.query(query, [...params, ...dfParams]);
+    res.json(rows);
+  } catch (err) {
+    console.error('Erro em /api/estabelecimentos/por-municipio:', err);
+    res.status(500).json({ error: 'Erro ao buscar dados por município', details: err.message });
   }
 });
 
@@ -356,7 +473,7 @@ app.get('/api/estabelecimentos/por-recenseador', async (req, res) => {
         COUNT(*) as total,
         SUM(CASE WHEN situacao_recenseamento = 'Concluído' THEN 1 ELSE 0 END) as concluidos,
         ROUND(SUM(CASE WHEN situacao_recenseamento = 'Concluído' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) as percentual
-      FROM censo.recenseamento
+      FROM censo.recenseamento_nova
       WHERE recenseador IS NOT NULL
       GROUP BY recenseador
       ORDER BY total DESC;
@@ -376,14 +493,23 @@ app.get('/api/estabelecimentos/por-recenseador', async (req, res) => {
  */
 app.get('/api/estabelecimentos/lista', async (req, res) => {
   try {
-    const { page = 1, limit = 50 } = req.query;
+    const { page = 1, limit = 50, busca } = req.query;
     const offset = (page - 1) * limit;
-    
+
     // Usar helper para construir WHERE
-    const { whereClause, params, paramCount } = buildEstabelecimentosWhere(req.query);
-    
+    let { whereClause, params, paramCount } = buildEstabelecimentosWhere(req.query);
+
+    // Busca textual (nome, CNES, município)
+    if (busca && busca.trim()) {
+      const buscaParam = `%${busca.trim()}%`;
+      const buscaCond = `(no_fantasia ILIKE $${paramCount} OR co_cnes::text ILIKE $${paramCount} OR no_municipio ILIKE $${paramCount})`;
+      whereClause = whereClause ? whereClause + ` AND ${buscaCond}` : `WHERE ${buscaCond}`;
+      params.push(buscaParam);
+      paramCount++;
+    }
+
     // Count total com filtros
-    const countQuery = `SELECT COUNT(*) as total FROM censo.recenseamento ${whereClause}`;
+    const countQuery = `SELECT COUNT(*) as total FROM censo.recenseamento_nova ${whereClause}`;
     const { rows: [{ total }] } = await pool.query(countQuery, params);
     
     // Get paginated data com filtros
@@ -400,7 +526,7 @@ app.get('/api/estabelecimentos/lista', async (req, res) => {
         recenseador,
         situacao_recenseamento,
         dt_atualizacao
-      FROM censo.recenseamento
+      FROM censo.recenseamento_nova
       ${whereClause}
       ORDER BY no_fantasia
       LIMIT $${paramCount} OFFSET $${paramCount + 1}
@@ -429,61 +555,68 @@ app.get('/api/estabelecimentos/lista', async (req, res) => {
  */
 app.get('/api/estabelecimentos/filtros', async (req, res) => {
   try {
-    const [macro, regional, municipio, situacao, esfera, recenseador, estrategia, tp_unidade] = await Promise.all([
+    const [uf, macro, regional, municipio, situacao, esfera, recenseador, estrategia, tp_unidade] = await Promise.all([
       pool.query(`
-        SELECT DISTINCT no_macrorregional as valor
-        FROM censo.recenseamento
+        SELECT DISTINCT sg_uf as valor
+        FROM censo.recenseamento_nova
+        WHERE sg_uf IS NOT NULL
+        ORDER BY sg_uf
+      `),
+      pool.query(`
+        SELECT DISTINCT no_macrorregional as valor, sg_uf
+        FROM censo.recenseamento_nova
         WHERE no_macrorregional IS NOT NULL
-        ORDER BY no_macrorregional
+        ORDER BY sg_uf, no_macrorregional
       `),
       pool.query(`
-        SELECT DISTINCT no_regional_saude as valor
-        FROM censo.recenseamento
+        SELECT DISTINCT no_regional_saude as valor, sg_uf
+        FROM censo.recenseamento_nova
         WHERE no_regional_saude IS NOT NULL
-        ORDER BY no_regional_saude
+        ORDER BY sg_uf, no_regional_saude
       `),
       pool.query(`
-        SELECT DISTINCT no_municipio as valor
-        FROM censo.recenseamento
+        SELECT DISTINCT no_municipio as valor, sg_uf
+        FROM censo.recenseamento_nova
         WHERE no_municipio IS NOT NULL
-        ORDER BY no_municipio
+        ORDER BY sg_uf, no_municipio
       `),
       pool.query(`
         SELECT DISTINCT situacao_recenseamento as valor
-        FROM censo.recenseamento
+        FROM censo.recenseamento_nova
         WHERE situacao_recenseamento IS NOT NULL
         ORDER BY situacao_recenseamento
       `),
       pool.query(`
         SELECT DISTINCT esfera as valor
-        FROM censo.recenseamento
+        FROM censo.recenseamento_nova
         WHERE esfera IS NOT NULL
         ORDER BY esfera
       `),
       pool.query(`
         SELECT DISTINCT recenseador as valor
-        FROM censo.recenseamento
+        FROM censo.recenseamento_nova
         WHERE recenseador IS NOT NULL
         ORDER BY recenseador
       `),
       pool.query(`
         SELECT DISTINCT estrategia as valor
-        FROM censo.recenseamento
+        FROM censo.recenseamento_nova
         WHERE estrategia IS NOT NULL AND estrategia != ''
         ORDER BY estrategia
       `),
       pool.query(`
         SELECT DISTINCT tp_unidade as valor
-        FROM censo.recenseamento
+        FROM censo.recenseamento_nova
         WHERE tp_unidade IS NOT NULL AND tp_unidade != ''
         ORDER BY tp_unidade
       `)
     ]);
 
     res.json({
-      macrorregiao: macro.rows.map(r => r.valor),
-      regional: regional.rows.map(r => r.valor),
-      municipio: municipio.rows.map(r => r.valor),
+      uf: uf.rows.map(r => r.valor),
+      macrorregiao: macro.rows.map(r => ({ valor: r.valor, uf: r.sg_uf })),
+      regional: regional.rows.map(r => ({ valor: r.valor, uf: r.sg_uf })),
+      municipio: municipio.rows.map(r => ({ valor: r.valor, uf: r.sg_uf })),
       situacao: situacao.rows.map(r => r.valor),
       esfera: esfera.rows.map(r => r.valor),
       recenseador: recenseador.rows.map(r => r.valor),
@@ -496,6 +629,18 @@ app.get('/api/estabelecimentos/filtros', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/estabelecimentos/filtros-df
+ * Retorna as listas de Regiões de Saúde e Regiões Administrativas do DF
+ * (carregadas em memória a partir do CSV de regionalização)
+ */
+app.get('/api/estabelecimentos/filtros-df', (req, res) => {
+  res.json({
+    regioes_saude_df: Object.keys(dfRegionSaudeMap).sort(),
+    regioes_adm_df:   Object.keys(dfRegionAdmMap).sort()
+  });
+});
+
 // ========================================
 // ROTAS - PAINEL DE VÍNCULOS
 // ========================================
@@ -504,16 +649,52 @@ app.get('/api/estabelecimentos/filtros', async (req, res) => {
  * Helper: Construir WHERE clause para vínculos
  */
 function buildVinculosWhere(query, additionalConditions = []) {
-  const { cbo, vinculo, estabelecimento, sexo, escolaridade, raca, cine, operacao } = query;
+  const { cbo, vinculo, estabelecimento, sexo, escolaridade, raca, cine, operacao,
+          uf, macro, regional, municipio, regiao_saude_df, regiao_adm_df } = query;
   const conditions = [...additionalConditions];
   const params = [];
   let paramCount = 1;
-  
+
   console.log('🔍 buildVinculosWhere recebeu:', query);
+
+  // ---- Localização (subquery em recenseamento_nova) ----
+  if (uf) {
+    conditions.push(`co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE sg_uf = $${paramCount++})`);
+    params.push(uf);
+    console.log('  ✓ Filtro UF aplicado:', uf);
+  }
+  if (macro) {
+    conditions.push(`co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE no_macrorregional = $${paramCount++})`);
+    params.push(macro);
+    console.log('  ✓ Filtro Macro aplicado:', macro);
+  }
+  if (regional) {
+    conditions.push(`co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE no_regional_saude = $${paramCount++})`);
+    params.push(regional);
+    console.log('  ✓ Filtro Regional aplicado:', regional);
+  }
+  if (municipio) {
+    conditions.push(`co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE no_municipio = $${paramCount++})`);
+    params.push(municipio);
+    console.log('  ✓ Filtro Município aplicado:', municipio);
+  }
+  if (regiao_saude_df && dfRegionSaudeMap[regiao_saude_df]) {
+    const cnesList = dfRegionSaudeMap[regiao_saude_df].map(String);
+    conditions.push(`co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE co_cnes::text = ANY($${paramCount++}))`);
+    params.push(cnesList);
+    console.log('  ✓ Filtro Região de Saúde DF aplicado:', regiao_saude_df);
+  }
+  if (regiao_adm_df && dfRegionAdmMap[regiao_adm_df]) {
+    const cnesList = dfRegionAdmMap[regiao_adm_df].map(String);
+    conditions.push(`co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE co_cnes::text = ANY($${paramCount++}))`);
+    params.push(cnesList);
+    console.log('  ✓ Filtro Região Administrativa DF aplicado:', regiao_adm_df);
+  }
   
   // CBO: buscar por código OU descrição (formato: "código - descrição")
+  // co_cbo_ocupacao é int4 na nova tabela — cast para text para aceitar comparação com param string
   if (cbo) {
-    conditions.push(`(co_cbo_ocupacao = $${paramCount} OR ds_cbo_ocupacao = $${paramCount})`);
+    conditions.push(`(co_cbo_ocupacao::text = $${paramCount} OR ds_cbo_ocupacao = $${paramCount})`);
     params.push(cbo);
     paramCount++;
     console.log('  ✓ Filtro CBO aplicado:', cbo);
@@ -546,8 +727,9 @@ function buildVinculosWhere(query, additionalConditions = []) {
   }
   
   // Escolaridade: buscar por código OU descrição
+  // co_escolaridade é int2 na nova tabela — cast para text
   if (escolaridade) {
-    conditions.push(`(co_escolaridade = $${paramCount} OR ds_escolaridade = $${paramCount})`);
+    conditions.push(`(co_escolaridade::text = $${paramCount} OR ds_escolaridade = $${paramCount})`);
     params.push(escolaridade);
     paramCount++;
     console.log('  ✓ Filtro Escolaridade aplicado:', escolaridade);
@@ -606,16 +788,16 @@ app.get('/api/vinculos/stats', async (req, res) => {
         COUNT(DISTINCT nu_cpf) as total_profissionais,
         COUNT(DISTINCT co_cnes) as total_cnes,
         ROUND(AVG(
-          COALESCE(CAST(qt_carga_horaria_ambulatorial AS NUMERIC), 0) + 
-          COALESCE(CAST(qt_carga_horaria_hospitalar AS NUMERIC), 0) + 
-          COALESCE(CAST(qt_carga_horaria_outros AS NUMERIC), 0)
+          COALESCE(qt_carga_horaria_ambulatorial, 0) + 
+          COALESCE(qt_carga_horaria_hospitalar, 0) + 
+          COALESCE(qt_carga_horaria_outros, 0)
         )) as media_carga_horaria,
         SUM(CASE WHEN no_tipo_operacao_censo = 'Inclusão' THEN 1 ELSE 0 END) as inclusoes,
         SUM(CASE WHEN no_tipo_operacao_censo = 'Alteração' THEN 1 ELSE 0 END) as alteracoes,
         SUM(CASE WHEN no_tipo_operacao_censo = 'Exclusão' THEN 1 ELSE 0 END) as exclusoes,
         SUM(CASE WHEN st_cnes = 'S' THEN 1 ELSE 0 END) as igual_cnes,
         SUM(CASE WHEN st_cnes = 'N' THEN 1 ELSE 0 END) as diverge_cnes
-      FROM censo.vinculos
+      FROM censo.recenseados_nova
       ${whereClause};
     `;
     
@@ -660,7 +842,7 @@ app.get('/api/vinculos/agregados', async (req, res) => {
         SELECT 
           no_tipo_operacao_censo as tipo, 
           COUNT(*) as n
-        FROM censo.vinculos
+        FROM censo.recenseados_nova
         ${whereClause ? whereClause + ' AND no_tipo_operacao_censo IS NOT NULL' : 'WHERE no_tipo_operacao_censo IS NOT NULL'}
         GROUP BY no_tipo_operacao_censo
       `),
@@ -668,7 +850,7 @@ app.get('/api/vinculos/agregados', async (req, res) => {
       // Operação x CNES
       executeQuery(`
         SELECT no_tipo_operacao_censo, st_cnes, COUNT(*) as n
-        FROM censo.vinculos
+        FROM censo.recenseados_nova
         ${whereClause ? whereClause + ' AND no_tipo_operacao_censo IS NOT NULL' : 'WHERE no_tipo_operacao_censo IS NOT NULL'}
         GROUP BY no_tipo_operacao_censo, st_cnes
       `),
@@ -682,7 +864,7 @@ app.get('/api/vinculos/agregados', async (req, res) => {
             ELSE 'Inválido/Não informado'
           END as sexo,
           COUNT(*) as n
-        FROM censo.vinculos
+        FROM censo.recenseados_nova
         ${whereClause ? whereClause + " AND co_sexo IS NOT NULL AND co_sexo != ''" : "WHERE co_sexo IS NOT NULL AND co_sexo != ''"}
         GROUP BY 
           CASE 
@@ -701,7 +883,7 @@ app.get('/api/vinculos/agregados', async (req, res) => {
             ELSE ds_raca_cor
           END as raca, 
           COUNT(*) as n
-        FROM censo.vinculos
+        FROM censo.recenseados_nova
         ${whereClause}
         GROUP BY 
           CASE 
@@ -723,7 +905,7 @@ app.get('/api/vinculos/agregados', async (req, res) => {
       // Identidade de Gênero
       executeQuery(`
         SELECT ds_identidade_genero as identidade, COUNT(*) as n
-        FROM censo.vinculos
+        FROM censo.recenseados_nova
         ${whereClause ? whereClause + " AND ds_identidade_genero IS NOT NULL AND ds_identidade_genero != ''" : "WHERE ds_identidade_genero IS NOT NULL AND ds_identidade_genero != ''"}
         GROUP BY ds_identidade_genero
       `),
@@ -731,7 +913,7 @@ app.get('/api/vinculos/agregados', async (req, res) => {
       // Escolaridade
       executeQuery(`
         SELECT ds_escolaridade as escolaridade, COUNT(*) as n
-        FROM censo.vinculos
+        FROM censo.recenseados_nova
         ${whereClause ? whereClause + " AND ds_escolaridade IS NOT NULL AND ds_escolaridade != ''" : "WHERE ds_escolaridade IS NOT NULL AND ds_escolaridade != ''"}
         GROUP BY ds_escolaridade
       `),
@@ -739,7 +921,7 @@ app.get('/api/vinculos/agregados', async (req, res) => {
       // Área de Formação (CINE) - Top 15
       executeQuery(`
         SELECT ds_cine as cine, COUNT(*) as n
-        FROM censo.vinculos
+        FROM censo.recenseados_nova
         ${whereClause ? whereClause + " AND ds_cine IS NOT NULL AND ds_cine != ''" : "WHERE ds_cine IS NOT NULL AND ds_cine != ''"}
         GROUP BY ds_cine
         ORDER BY n DESC
@@ -749,7 +931,7 @@ app.get('/api/vinculos/agregados', async (req, res) => {
       // CBO - Top 20
       executeQuery(`
         SELECT ds_cbo_ocupacao as cbo, COUNT(*) as n
-        FROM censo.vinculos
+        FROM censo.recenseados_nova
         ${whereClause ? whereClause + " AND ds_cbo_ocupacao IS NOT NULL AND ds_cbo_ocupacao != ''" : "WHERE ds_cbo_ocupacao IS NOT NULL AND ds_cbo_ocupacao != ''"}
         GROUP BY ds_cbo_ocupacao
         ORDER BY n DESC
@@ -768,7 +950,7 @@ app.get('/api/vinculos/agregados', async (req, res) => {
       // Tipo de Vinculação - Top 15
       executeQuery(`
         SELECT vinculacao, COUNT(*) as n
-        FROM censo.vinculos
+        FROM censo.recenseados_nova
         ${whereClause ? whereClause + " AND vinculacao IS NOT NULL AND vinculacao != ''" : "WHERE vinculacao IS NOT NULL AND vinculacao != ''"}
         GROUP BY vinculacao
         ORDER BY n DESC
@@ -779,10 +961,10 @@ app.get('/api/vinculos/agregados', async (req, res) => {
       executeQuery(`
         WITH ch_calculado AS (
           SELECT 
-            COALESCE(CAST(qt_carga_horaria_ambulatorial AS NUMERIC), 0) + 
-            COALESCE(CAST(qt_carga_horaria_hospitalar AS NUMERIC), 0) + 
-            COALESCE(CAST(qt_carga_horaria_outros AS NUMERIC), 0) as ch_total
-          FROM censo.vinculos
+            COALESCE(qt_carga_horaria_ambulatorial, 0) + 
+            COALESCE(qt_carga_horaria_hospitalar, 0) + 
+            COALESCE(qt_carga_horaria_outros, 0) as ch_total
+          FROM censo.recenseados_nova
           ${whereClause}
         ),
         faixas AS (
@@ -828,22 +1010,28 @@ app.get('/api/vinculos/agregados', async (req, res) => {
       // Expectativa Profissional
       executeQuery(`
         SELECT no_expectativa_profissional as expectativa, COUNT(*) as n
-        FROM censo.vinculos
+        FROM censo.recenseados_nova
         ${whereClause ? whereClause + " AND no_expectativa_profissional IS NOT NULL AND no_expectativa_profissional != ''" : "WHERE no_expectativa_profissional IS NOT NULL AND no_expectativa_profissional != ''"}
         GROUP BY no_expectativa_profissional
       `),
 
-      // Estratégia (JOIN com recenseamento — qualifica co_cnes para evitar ambiguidade)
+      // Estratégia — LEFT JOIN com DISTINCT ON para evitar multiplicação de linhas
+      // e garantir que a soma de todos os valores = Total de Vínculos
       (() => {
         const estrategiaWhere = whereClause
-          ? whereClause.replace(/\bco_cnes\b/g, 'v.co_cnes') + " AND r.estrategia IS NOT NULL AND r.estrategia != ''"
-          : "WHERE r.estrategia IS NOT NULL AND r.estrategia != ''";
+          ? whereClause.replace(/\bco_cnes\b/g, 'v.co_cnes')
+          : '';
         const sql = `
-          SELECT r.estrategia, COUNT(*) as n
-          FROM censo.vinculos v
-          INNER JOIN censo.recenseamento r ON v.co_cnes = r.co_cnes
+          SELECT COALESCE(NULLIF(r.estrategia, ''), 'Não informado') AS estrategia,
+                 COUNT(*) AS n
+          FROM censo.recenseados_nova v
+          LEFT JOIN (
+            SELECT DISTINCT ON (co_cnes) co_cnes, estrategia
+            FROM censo.recenseamento_nova
+            ORDER BY co_cnes, coletado_em DESC
+          ) r ON r.co_cnes = v.co_cnes
           ${estrategiaWhere}
-          GROUP BY r.estrategia
+          GROUP BY COALESCE(NULLIF(r.estrategia, ''), 'Não informado')
           ORDER BY n DESC
         `;
         return params.length > 0 ? pool.query(sql, params) : pool.query(sql);
@@ -878,26 +1066,35 @@ app.get('/api/vinculos/agregados', async (req, res) => {
  */
 app.get('/api/vinculos/tabela', async (req, res) => {
   try {
-    const { page = 1, limit = 30 } = req.query;
+    const { page = 1, limit = 30, busca } = req.query;
     const offset = (page - 1) * limit;
-    
+
     // Usar helper para construir WHERE com todos os filtros
-    const { whereClause, params, paramCount } = buildVinculosWhere(req.query);
-    
+    let { whereClause, params, paramCount } = buildVinculosWhere(req.query);
+
+    // Busca textual (CBO, CNES)
+    if (busca && busca.trim()) {
+      const buscaParam = `%${busca.trim()}%`;
+      const buscaCond = `(ds_cbo_ocupacao ILIKE $${paramCount} OR co_cnes::text ILIKE $${paramCount} OR vinculacao ILIKE $${paramCount})`;
+      whereClause = whereClause ? whereClause + ` AND ${buscaCond}` : `WHERE ${buscaCond}`;
+      params.push(buscaParam);
+      paramCount++;
+    }
+
     console.log('📋 Tabela - WHERE:', whereClause);
     console.log('📋 Tabela - Params:', params);
 
     // Chave de deduplicação: 8 campos que identificam um vínculo único
     const dedupKey = `nu_cpf, co_cnes, co_cbo_ocupacao, nu_vinculacao,
-      COALESCE(qt_carga_horaria_ambulatorial, ''), COALESCE(qt_carga_horaria_hospitalar, ''),
-      COALESCE(qt_carga_horaria_outros, ''), no_tipo_operacao_censo`;
+      COALESCE(qt_carga_horaria_ambulatorial::text, ''), COALESCE(qt_carga_horaria_hospitalar::text, ''),
+      COALESCE(qt_carga_horaria_outros::text, ''), no_tipo_operacao_censo`;
 
     // Query para contar total (deduplificado)
     const countQuery = `
       SELECT COUNT(*) as total
       FROM (
         SELECT DISTINCT ON (${dedupKey}) nu_cpf
-        FROM censo.vinculos
+        FROM censo.recenseados_nova
         ${whereClause}
         ORDER BY ${dedupKey}
       ) sub
@@ -915,9 +1112,9 @@ app.get('/api/vinculos/tabela', async (req, res) => {
           co_sexo,
           ds_cbo_ocupacao,
           vinculacao,
-          COALESCE(CAST(qt_carga_horaria_ambulatorial AS NUMERIC), 0) +
-          COALESCE(CAST(qt_carga_horaria_hospitalar AS NUMERIC), 0) +
-          COALESCE(CAST(qt_carga_horaria_outros AS NUMERIC), 0) as carga_horaria_total,
+          COALESCE(qt_carga_horaria_ambulatorial, 0) +
+          COALESCE(qt_carga_horaria_hospitalar, 0) +
+          COALESCE(qt_carga_horaria_outros, 0) as carga_horaria_total,
           vl_remuneracao,
           no_tipo_operacao_censo,
           co_cnes,
@@ -925,7 +1122,7 @@ app.get('/api/vinculos/tabela', async (req, res) => {
           ds_escolaridade,
           ds_raca_cor,
           ds_cine
-        FROM censo.vinculos
+        FROM censo.recenseados_nova
         ${whereClause}
         ORDER BY ${dedupKey}
       ) t
@@ -974,10 +1171,10 @@ app.get('/api/vinculos/filtros', async (req, res) => {
         SELECT DISTINCT
           co_escolaridade as codigo,
           ds_escolaridade as descricao,
-          co_escolaridade || ' - ' || ds_escolaridade as valor
-        FROM censo.vinculos
+          co_escolaridade::text || ' - ' || ds_escolaridade as valor
+        FROM censo.recenseados_nova
         WHERE co_escolaridade IS NOT NULL AND ds_escolaridade IS NOT NULL
-          AND co_escolaridade != '' AND ds_escolaridade != ''
+          AND ds_escolaridade != ''
         ORDER BY co_escolaridade
       `),
       pool.query(`
@@ -987,7 +1184,7 @@ app.get('/api/vinculos/filtros', async (req, res) => {
             THEN 'Sem informação'
             ELSE ds_raca_cor
           END as valor
-        FROM censo.vinculos
+        FROM censo.recenseados_nova
         WHERE ds_raca_cor IS NOT NULL
         ORDER BY 1
       `),
@@ -996,7 +1193,7 @@ app.get('/api/vinculos/filtros', async (req, res) => {
           co_cine as codigo,
           ds_cine as descricao,
           co_cine || ' - ' || ds_cine as valor
-        FROM censo.vinculos
+        FROM censo.recenseados_nova
         WHERE co_cine IS NOT NULL AND ds_cine IS NOT NULL
           AND co_cine != '' AND ds_cine != ''
         ORDER BY co_cine
@@ -1010,10 +1207,10 @@ app.get('/api/vinculos/filtros', async (req, res) => {
         SELECT DISTINCT
           co_cbo_ocupacao as codigo,
           ds_cbo_ocupacao as descricao,
-          co_cbo_ocupacao || ' - ' || ds_cbo_ocupacao as valor
-        FROM censo.vinculos
+          co_cbo_ocupacao::text || ' - ' || ds_cbo_ocupacao as valor
+        FROM censo.recenseados_nova
         WHERE co_cbo_ocupacao IS NOT NULL AND ds_cbo_ocupacao IS NOT NULL
-          AND co_cbo_ocupacao != '' AND ds_cbo_ocupacao != ''
+          AND ds_cbo_ocupacao != ''
         ORDER BY co_cbo_ocupacao
         LIMIT 1000
       `),
@@ -1022,7 +1219,7 @@ app.get('/api/vinculos/filtros', async (req, res) => {
           nu_vinculacao as codigo,
           vinculacao as descricao,
           nu_vinculacao || ' - ' || vinculacao as valor
-        FROM censo.vinculos
+        FROM censo.recenseados_nova
         WHERE nu_vinculacao IS NOT NULL AND vinculacao IS NOT NULL
           AND nu_vinculacao != '' AND vinculacao != ''
         ORDER BY nu_vinculacao
@@ -1033,8 +1230,8 @@ app.get('/api/vinculos/filtros', async (req, res) => {
           r.co_cnes as codigo,
           r.no_razao_social as descricao,
           r.co_cnes || ' - ' || r.no_razao_social as valor
-        FROM censo.recenseamento r
-        INNER JOIN censo.vinculos v ON r.co_cnes = v.co_cnes
+        FROM censo.recenseamento_nova r
+        INNER JOIN censo.recenseados_nova v ON r.co_cnes = v.co_cnes
         WHERE r.co_cnes IS NOT NULL AND r.no_razao_social IS NOT NULL
         ORDER BY r.co_cnes
       `)
@@ -1083,7 +1280,7 @@ app.get('/api/vinculos/nao-alterados', async (req, res) => {
     const alteradosQuery = `
       SELECT COUNT(DISTINCT e.co_cpf || '|' || e.co_cnes) as alterados
       FROM censo.espelho_cnes e
-      INNER JOIN censo.vinculos v 
+      INNER JOIN censo.recenseados_nova v 
         ON e.co_cpf = v.nu_cpf 
         AND e.co_cnes = v.co_cnes
       WHERE e.nu_comp = $1
@@ -1155,6 +1352,22 @@ function buildResolucaoWhere(filters) {
     console.log(`  ✓ Filtro Município aplicado: ${filters.municipio}`);
   }
 
+  // Filtro: Região de Saúde DF (classificação própria via CNES)
+  if (filters.regiao_saude_df && dfRegionSaudeMap[filters.regiao_saude_df]) {
+    const cnesList = dfRegionSaudeMap[filters.regiao_saude_df].map(String);
+    conditions.push(`r.co_cnes::text = ANY($${paramIndex++})`);
+    params.push(cnesList);
+    console.log(`  ✓ Filtro Região de Saúde DF aplicado: ${filters.regiao_saude_df}`);
+  }
+
+  // Filtro: Região Administrativa DF (classificação própria via CNES)
+  if (filters.regiao_adm_df && dfRegionAdmMap[filters.regiao_adm_df]) {
+    const cnesList = dfRegionAdmMap[filters.regiao_adm_df].map(String);
+    conditions.push(`r.co_cnes::text = ANY($${paramIndex++})`);
+    params.push(cnesList);
+    console.log(`  ✓ Filtro Região Administrativa DF aplicado: ${filters.regiao_adm_df}`);
+  }
+
   // Filtro: Recenseador
   if (filters.recenseador) {
     conditions.push(`r.recenseador = $${paramIndex}`);
@@ -1199,9 +1412,9 @@ function buildResolucaoWhere(filters) {
 // CHAVES ÚNICAS DE VÍNCULO (7 campos)
 // ==========================================
 // CPF + CNES + CBO + Tipo Vínculo + Carga Ambulatorial + Carga Hospitalar + Carga Outros
-const CHAVE_VINCULO = "nu_cpf || '|' || co_cnes || '|' || co_cbo_ocupacao || '|' || nu_vinculacao || '|' || COALESCE(qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(qt_carga_horaria_hospitalar, '') || '|' || COALESCE(qt_carga_horaria_outros, '')";
+const CHAVE_VINCULO = "nu_cpf || '|' || co_cnes || '|' || co_cbo_ocupacao::text || '|' || nu_vinculacao || '|' || COALESCE(qt_carga_horaria_ambulatorial::text, '') || '|' || COALESCE(qt_carga_horaria_hospitalar::text, '') || '|' || COALESCE(qt_carga_horaria_outros::text, '')";
 
-const CHAVE_V = "v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')";
+const CHAVE_V = "v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao::text || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial::text, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar::text, '') || '|' || COALESCE(v.qt_carga_horaria_outros::text, '')";
 
 // CASE de resolução equalizado com os Indicadores Principais (requer LEFT JOIN no espelho)
 // Inclusão resolvida  → EXISTS no espelho (e.co_cpf IS NOT NULL)
@@ -1258,13 +1471,13 @@ app.get('/api/resolucao/stats', async (req, res) => {
     
     // JOIN com recenseamento (apenas se necessário)
     const recenseamentoJoin = needsRecenseamentoJoin 
-      ? 'INNER JOIN censo.recenseamento r ON v.co_cnes = r.co_cnes' 
+      ? 'INNER JOIN censo.recenseamento_nova r ON v.co_cnes = r.co_cnes' 
       : '';
 
     // Total de divergências (TODOS os vínculos únicos - chave de 7 campos)
     const totalDivQuery = `
       SELECT COUNT(DISTINCT ${CHAVE_V}) as total
-      FROM censo.vinculos v
+      FROM censo.recenseados_nova v
       ${recenseamentoJoin}
       ${whereClause}
       ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
@@ -1275,12 +1488,12 @@ app.get('/api/resolucao/stats', async (req, res) => {
     // INCLUSÃO: Deve EXISTIR no espelho (4 campos batem)
     const resolvidasInclusaoQuery = `
       SELECT COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) as resolvidas
-      FROM censo.vinculos v
+      FROM censo.recenseados_nova v
       ${recenseamentoJoin}
       INNER JOIN censo.espelho_cnes e 
         ON e.co_cpf = v.nu_cpf 
         AND e.co_cnes = v.co_cnes
-        AND e.co_cbo = v.co_cbo_ocupacao
+        AND e.co_cbo = v.co_cbo_ocupacao::text
         AND e.ind_vinculacao = v.nu_vinculacao
         ${compFilter}
       ${whereClause}
@@ -1290,12 +1503,12 @@ app.get('/api/resolucao/stats', async (req, res) => {
     // EXCLUSÃO: NÃO deve existir no espelho (chave de 4 campos NÃO está presente)
     const resolvidasExclusaoQuery = `
       SELECT COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) as resolvidas
-      FROM censo.vinculos v
+      FROM censo.recenseados_nova v
       ${recenseamentoJoin}
       LEFT JOIN censo.espelho_cnes e 
         ON e.co_cpf = v.nu_cpf 
         AND e.co_cnes = v.co_cnes
-        AND e.co_cbo = v.co_cbo_ocupacao
+        AND e.co_cbo = v.co_cbo_ocupacao::text
         AND e.ind_vinculacao = v.nu_vinculacao
         ${compFilter}
       ${whereClause}
@@ -1308,12 +1521,12 @@ app.get('/api/resolucao/stats', async (req, res) => {
     // IMPORTANTE: Usar ::numeric pois as colunas contêm valores decimais (ex: "30.0")
     const resolvidasAlteracaoQuery = `
       SELECT COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) as resolvidas
-      FROM censo.vinculos v
+      FROM censo.recenseados_nova v
       ${recenseamentoJoin}
       INNER JOIN censo.espelho_cnes e 
         ON e.co_cpf = v.nu_cpf 
         AND e.co_cnes = v.co_cnes
-        AND e.co_cbo = v.co_cbo_ocupacao
+        AND e.co_cbo = v.co_cbo_ocupacao::text
         AND e.ind_vinculacao = v.nu_vinculacao
         ${compFilter}
       ${whereClause}
@@ -1387,13 +1600,13 @@ app.get('/api/resolucao/agregados', async (req, res) => {
     
     // JOIN com recenseamento (apenas se necessário)
     const recenseamentoJoin = needsRecenseamentoJoin 
-      ? 'INNER JOIN censo.recenseamento r ON v.co_cnes = r.co_cnes' 
+      ? 'INNER JOIN censo.recenseamento_nova r ON v.co_cnes = r.co_cnes' 
       : '';
 
     const compFilter = competencia ? `AND e.nu_comp = '${competencia}'` : '';
     const compJoin = competencia ? 
-      `INNER JOIN censo.espelho_cnes e ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes AND e.co_cbo = v.co_cbo_ocupacao AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}` :
-      `LEFT JOIN censo.espelho_cnes e ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes AND e.co_cbo = v.co_cbo_ocupacao AND e.ind_vinculacao = v.nu_vinculacao`;
+      `INNER JOIN censo.espelho_cnes e ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}` :
+      `LEFT JOIN censo.espelho_cnes e ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao`;
 
     console.log('📊 Executando agregados de resolução...');
     console.log('📊 Competência filtrada:', competencia || 'TODAS');
@@ -1408,25 +1621,25 @@ app.get('/api/resolucao/agregados', async (req, res) => {
     //   Alteração resolvida → INNER JOIN espelho com carga diferente
     const resolvidasCTE = `resolvidas_eq AS (
       SELECT DISTINCT ${CHAVE_V} AS chave
-      FROM censo.vinculos v ${recenseamentoJoin}
+      FROM censo.recenseados_nova v ${recenseamentoJoin}
       INNER JOIN censo.espelho_cnes e
         ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes
-        AND e.co_cbo = v.co_cbo_ocupacao AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}
+        AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}
       ${whereClause} ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Inclusão'
       UNION ALL
       SELECT DISTINCT ${CHAVE_V} AS chave
-      FROM censo.vinculos v ${recenseamentoJoin}
+      FROM censo.recenseados_nova v ${recenseamentoJoin}
       LEFT JOIN censo.espelho_cnes e
         ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes
-        AND e.co_cbo = v.co_cbo_ocupacao AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}
+        AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}
       ${whereClause} ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Exclusão'
         AND e.co_cpf IS NULL
       UNION ALL
       SELECT DISTINCT ${CHAVE_V} AS chave
-      FROM censo.vinculos v ${recenseamentoJoin}
+      FROM censo.recenseados_nova v ${recenseamentoJoin}
       INNER JOIN censo.espelho_cnes e
         ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes
-        AND e.co_cbo = v.co_cbo_ocupacao AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}
+        AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}
       ${whereClause} ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Alteração'
         AND (
           COALESCE(v.qt_carga_horaria_ambulatorial::numeric, 0) != COALESCE(e.qt_carga_horaria_ambulatorial::numeric, 0)
@@ -1443,14 +1656,14 @@ app.get('/api/resolucao/agregados', async (req, res) => {
       WITH
       total_vinculos AS (
         SELECT COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) AS total
-        FROM censo.vinculos v
+        FROM censo.recenseados_nova v
         ${recenseamentoJoin}
         ${whereClause}
         ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
       ),
       total_exclusao AS (
         SELECT COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) AS n_exclusao
-        FROM censo.vinculos v
+        FROM censo.recenseados_nova v
         ${recenseamentoJoin}
         ${whereClause}
         ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Exclusão'
@@ -1463,12 +1676,12 @@ app.get('/api/resolucao/agregados', async (req, res) => {
       inc_alt_por_comp AS (
         SELECT e.nu_comp, COUNT(DISTINCT ${RESOLVIDA_CASE_EVOLUCAO}) AS resolvidas
         FROM censo.espelho_cnes e
-        INNER JOIN censo.vinculos v
+        INNER JOIN censo.recenseados_nova v
           ON e.co_cpf = v.nu_cpf
           AND e.co_cnes = v.co_cnes
-          AND e.co_cbo = v.co_cbo_ocupacao
+          AND e.co_cbo = v.co_cbo_ocupacao::text
           AND e.ind_vinculacao = v.nu_vinculacao
-        ${recenseamentoJoin ? 'INNER JOIN censo.recenseamento r ON v.co_cnes = r.co_cnes' : ''}
+        ${recenseamentoJoin ? 'INNER JOIN censo.recenseamento_nova r ON v.co_cnes = r.co_cnes' : ''}
         ${whereClause}
         ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
           ${compLimitFilter}
@@ -1477,12 +1690,12 @@ app.get('/api/resolucao/agregados', async (req, res) => {
       excl_no_espelho_por_comp AS (
         -- Exclusão vinculos que AINDA estão no espelho nesta competência (não resolvidos)
         SELECT e.nu_comp, COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) AS n_presente
-        FROM censo.vinculos v
+        FROM censo.recenseados_nova v
         ${recenseamentoJoin}
         INNER JOIN censo.espelho_cnes e
           ON e.co_cpf = v.nu_cpf
           AND e.co_cnes = v.co_cnes
-          AND e.co_cbo = v.co_cbo_ocupacao
+          AND e.co_cbo = v.co_cbo_ocupacao::text
           AND e.ind_vinculacao = v.nu_vinculacao
         ${whereClause}
         ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Exclusão'
@@ -1502,16 +1715,19 @@ app.get('/api/resolucao/agregados', async (req, res) => {
       ORDER BY cl.nu_comp
     `;
 
+    // Alias consistente: recenseamento_nova = r (via recenseamentoJoin), resolvidas_eq = rv
+    const cnesJoin = recenseamentoJoin || 'INNER JOIN censo.recenseamento_nova r ON v.co_cnes = r.co_cnes';
+
     // Divergências por Tipo — idêntico ao stats (via CTE)
     const tipoQuery = `
       WITH ${resolvidasCTE}
       SELECT
         v.no_tipo_operacao_censo AS tipo,
         COUNT(DISTINCT ${CHAVE_V}) AS total,
-        COUNT(DISTINCT r.chave) AS resolvidas
-      FROM censo.vinculos v
+        COUNT(DISTINCT rv.chave) AS resolvidas
+      FROM censo.recenseados_nova v
       ${recenseamentoJoin}
-      LEFT JOIN resolvidas_eq r ON r.chave = ${CHAVE_V}
+      LEFT JOIN resolvidas_eq rv ON rv.chave = ${CHAVE_V}
       ${whereClause}
       ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
       GROUP BY v.no_tipo_operacao_censo
@@ -1526,14 +1742,14 @@ app.get('/api/resolucao/agregados', async (req, res) => {
       WITH
       total_vinculos AS (
         SELECT COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) AS total
-        FROM censo.vinculos v
+        FROM censo.recenseados_nova v
         ${recenseamentoJoin}
         ${whereClause}
         ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
       ),
       total_exclusao AS (
         SELECT COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) AS n_exclusao
-        FROM censo.vinculos v
+        FROM censo.recenseados_nova v
         ${recenseamentoJoin}
         ${whereClause}
         ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Exclusão'
@@ -1546,12 +1762,12 @@ app.get('/api/resolucao/agregados', async (req, res) => {
         SELECT
           ${CHAVE_V} AS id,
           MIN(e.nu_comp) AS comp_resolucao
-        FROM censo.vinculos v
+        FROM censo.recenseados_nova v
         ${recenseamentoJoin}
         INNER JOIN censo.espelho_cnes e
           ON e.co_cpf = v.nu_cpf
           AND e.co_cnes = v.co_cnes
-          AND e.co_cbo = v.co_cbo_ocupacao
+          AND e.co_cbo = v.co_cbo_ocupacao::text
           AND e.ind_vinculacao = v.nu_vinculacao
         ${whereClause}
         ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
@@ -1570,12 +1786,12 @@ app.get('/api/resolucao/agregados', async (req, res) => {
       excl_no_espelho_por_comp AS (
         -- Quantidade de vinculos Exclusão ainda presentes no espelho por competência
         SELECT e.nu_comp, COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) AS n_presente
-        FROM censo.vinculos v
+        FROM censo.recenseados_nova v
         ${recenseamentoJoin}
         INNER JOIN censo.espelho_cnes e
           ON e.co_cpf = v.nu_cpf
           AND e.co_cnes = v.co_cnes
-          AND e.co_cbo = v.co_cbo_ocupacao
+          AND e.co_cbo = v.co_cbo_ocupacao::text
           AND e.ind_vinculacao = v.nu_vinculacao
         ${whereClause}
         ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Exclusão'
@@ -1615,10 +1831,10 @@ app.get('/api/resolucao/agregados', async (req, res) => {
       SELECT
         v.ds_cbo_ocupacao AS cbo,
         COUNT(DISTINCT ${CHAVE_V}) AS total,
-        COUNT(DISTINCT r.chave) AS resolvidas
-      FROM censo.vinculos v
+        COUNT(DISTINCT rv.chave) AS resolvidas
+      FROM censo.recenseados_nova v
       ${recenseamentoJoin}
-      LEFT JOIN resolvidas_eq r ON r.chave = ${CHAVE_V}
+      LEFT JOIN resolvidas_eq rv ON rv.chave = ${CHAVE_V}
       ${whereClause}
       ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
         AND v.ds_cbo_ocupacao IS NOT NULL AND v.ds_cbo_ocupacao != ''
@@ -1631,17 +1847,17 @@ app.get('/api/resolucao/agregados', async (req, res) => {
     const cnesQuery = `
       WITH ${resolvidasCTE}
       SELECT
-        rec.no_razao_social AS estabelecimento,
+        r.no_razao_social AS estabelecimento,
         v.co_cnes,
         COUNT(DISTINCT ${CHAVE_V}) AS total,
-        COUNT(DISTINCT r.chave) AS resolvidas
-      FROM censo.vinculos v
-      INNER JOIN censo.recenseamento rec ON v.co_cnes = rec.co_cnes
-      LEFT JOIN resolvidas_eq r ON r.chave = ${CHAVE_V}
+        COUNT(DISTINCT rv.chave) AS resolvidas
+      FROM censo.recenseados_nova v
+      ${cnesJoin}
+      LEFT JOIN resolvidas_eq rv ON rv.chave = ${CHAVE_V}
       ${whereClause}
       ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
-        AND rec.no_razao_social IS NOT NULL
-      GROUP BY rec.no_razao_social, v.co_cnes
+        AND r.no_razao_social IS NOT NULL
+      GROUP BY r.no_razao_social, v.co_cnes
       ORDER BY total DESC
       LIMIT 10
     `;
@@ -1652,16 +1868,16 @@ app.get('/api/resolucao/agregados', async (req, res) => {
       SELECT
         v.ds_cbo_ocupacao AS cbo,
         COUNT(DISTINCT ${CHAVE_V}) AS total,
-        COUNT(DISTINCT r.chave) AS resolvidas,
-        COUNT(DISTINCT ${CHAVE_V}) - COUNT(DISTINCT r.chave) AS pendentes,
+        COUNT(DISTINCT rv.chave) AS resolvidas,
+        COUNT(DISTINCT ${CHAVE_V}) - COUNT(DISTINCT rv.chave) AS pendentes,
         CASE
           WHEN COUNT(DISTINCT ${CHAVE_V}) > 0
-          THEN ROUND(COUNT(DISTINCT r.chave)::numeric / COUNT(DISTINCT ${CHAVE_V})::numeric * 100, 1)
+          THEN ROUND(COUNT(DISTINCT rv.chave)::numeric / COUNT(DISTINCT ${CHAVE_V})::numeric * 100, 1)
           ELSE 0
         END AS taxa_resolucao
-      FROM censo.vinculos v
+      FROM censo.recenseados_nova v
       ${recenseamentoJoin}
-      LEFT JOIN resolvidas_eq r ON r.chave = ${CHAVE_V}
+      LEFT JOIN resolvidas_eq rv ON rv.chave = ${CHAVE_V}
       ${whereClause}
       ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
         AND v.ds_cbo_ocupacao IS NOT NULL AND v.ds_cbo_ocupacao != ''
@@ -1675,23 +1891,23 @@ app.get('/api/resolucao/agregados', async (req, res) => {
     const cnesPendentesQuery = `
       WITH ${resolvidasCTE}
       SELECT
-        rec.no_razao_social AS estabelecimento,
+        r.no_razao_social AS estabelecimento,
         v.co_cnes,
         COUNT(DISTINCT ${CHAVE_V}) AS total,
-        COUNT(DISTINCT r.chave) AS resolvidas,
-        COUNT(DISTINCT ${CHAVE_V}) - COUNT(DISTINCT r.chave) AS pendentes,
+        COUNT(DISTINCT rv.chave) AS resolvidas,
+        COUNT(DISTINCT ${CHAVE_V}) - COUNT(DISTINCT rv.chave) AS pendentes,
         CASE
           WHEN COUNT(DISTINCT ${CHAVE_V}) > 0
-          THEN ROUND(COUNT(DISTINCT r.chave)::numeric / COUNT(DISTINCT ${CHAVE_V})::numeric * 100, 1)
+          THEN ROUND(COUNT(DISTINCT rv.chave)::numeric / COUNT(DISTINCT ${CHAVE_V})::numeric * 100, 1)
           ELSE 0
         END AS taxa_resolucao
-      FROM censo.vinculos v
-      INNER JOIN censo.recenseamento rec ON v.co_cnes = rec.co_cnes
-      LEFT JOIN resolvidas_eq r ON r.chave = ${CHAVE_V}
+      FROM censo.recenseados_nova v
+      ${cnesJoin}
+      LEFT JOIN resolvidas_eq rv ON rv.chave = ${CHAVE_V}
       ${whereClause}
       ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
-        AND rec.no_razao_social IS NOT NULL
-      GROUP BY rec.no_razao_social, v.co_cnes
+        AND r.no_razao_social IS NOT NULL
+      GROUP BY r.no_razao_social, v.co_cnes
       HAVING COUNT(DISTINCT ${CHAVE_V}) >= 5
       ORDER BY taxa_resolucao ASC, total DESC
       LIMIT 10
@@ -1736,6 +1952,14 @@ app.get('/api/resolucao/agregados', async (req, res) => {
     const cboPendentes = params.length > 0 ? await pool.query(cboPendentesQuery, params)  : await pool.query(cboPendentesQuery);
     const cnesPendentes= params.length > 0 ? await pool.query(cnesPendentesQuery, params) : await pool.query(cnesPendentesQuery);
 
+    // Total de vínculos no CNES por competência (sempre sem filtro — reflete base CNES completa)
+    const espelhoPorComp = await pool.query(`
+      SELECT nu_comp, COUNT(*) AS total_cnes
+      FROM censo.espelho_cnes
+      GROUP BY nu_comp
+      ORDER BY nu_comp
+    `);
+
     console.log('✅ Agregados de resolução concluídos');
     console.log('📊 Evolução:', evolucao.rows.length, 'competências');
     if (evolucao.rows.length > 0) {
@@ -1759,7 +1983,8 @@ app.get('/api/resolucao/agregados', async (req, res) => {
       cbo: cbo.rows,
       estabelecimentos: cnes.rows,
       cbo_pendentes: cboPendentes.rows,
-      estabelecimentos_pendentes: cnesPendentes.rows
+      estabelecimentos_pendentes: cnesPendentes.rows,
+      espelho_por_comp: espelhoPorComp.rows
     });
 
   } catch (err) {
@@ -1802,18 +2027,18 @@ app.get('/api/resolucao/filtros', async (req, res) => {
       // Tipos de Operação
       pool.query(`
         SELECT DISTINCT no_tipo_operacao_censo as valor
-        FROM censo.vinculos
+        FROM censo.recenseados_nova
         WHERE no_tipo_operacao_censo IS NOT NULL
         ORDER BY no_tipo_operacao_censo
       `),
       
       // CBO (código + descrição)
       pool.query(`
-        SELECT DISTINCT 
+        SELECT DISTINCT
           co_cbo_ocupacao as codigo,
           ds_cbo_ocupacao as descricao,
-          co_cbo_ocupacao || ' - ' || ds_cbo_ocupacao as valor
-        FROM censo.vinculos
+          co_cbo_ocupacao::text || ' - ' || ds_cbo_ocupacao as valor
+        FROM censo.recenseados_nova
         WHERE st_cnes = 'N'
           AND co_cbo_ocupacao IS NOT NULL
           AND ds_cbo_ocupacao IS NOT NULL
@@ -1827,8 +2052,8 @@ app.get('/api/resolucao/filtros', async (req, res) => {
           v.co_cnes as codigo,
           r.no_razao_social as descricao,
           v.co_cnes || ' - ' || r.no_razao_social as valor
-        FROM censo.vinculos v
-        LEFT JOIN censo.recenseamento r ON v.co_cnes = r.co_cnes
+        FROM censo.recenseados_nova v
+        LEFT JOIN censo.recenseamento_nova r ON v.co_cnes = r.co_cnes
         WHERE 1=1
           AND r.no_razao_social IS NOT NULL
         ORDER BY r.no_razao_social
@@ -1837,7 +2062,7 @@ app.get('/api/resolucao/filtros', async (req, res) => {
       // UF
       pool.query(`
         SELECT DISTINCT sg_uf as valor
-        FROM censo.recenseamento
+        FROM censo.recenseamento_nova
         WHERE sg_uf IS NOT NULL
         ORDER BY sg_uf
       `),
@@ -1848,7 +2073,7 @@ app.get('/api/resolucao/filtros', async (req, res) => {
           no_macrorregional as codigo,
           no_macrorregional as descricao,
           no_macrorregional as valor
-        FROM censo.recenseamento
+        FROM censo.recenseamento_nova
         WHERE no_macrorregional IS NOT NULL
         ORDER BY no_macrorregional
       `),
@@ -1859,7 +2084,7 @@ app.get('/api/resolucao/filtros', async (req, res) => {
           no_regional_saude as codigo,
           no_regional_saude as descricao,
           no_regional_saude as valor
-        FROM censo.recenseamento
+        FROM censo.recenseamento_nova
         WHERE no_regional_saude IS NOT NULL
         ORDER BY no_regional_saude
       `),
@@ -1870,7 +2095,7 @@ app.get('/api/resolucao/filtros', async (req, res) => {
           no_municipio as codigo,
           no_municipio as descricao,
           no_municipio as valor
-        FROM censo.recenseamento
+        FROM censo.recenseamento_nova
         WHERE no_municipio IS NOT NULL
         ORDER BY no_municipio
       `),
@@ -1878,7 +2103,7 @@ app.get('/api/resolucao/filtros', async (req, res) => {
       // Recenseador
       pool.query(`
         SELECT DISTINCT recenseador as valor
-        FROM censo.recenseamento
+        FROM censo.recenseamento_nova
         WHERE recenseador IS NOT NULL AND recenseador != ''
         ORDER BY recenseador
       `)
@@ -1908,11 +2133,20 @@ app.get('/api/resolucao/filtros', async (req, res) => {
  */
 app.get('/api/resolucao/tabela', async (req, res) => {
   try {
-    const { whereClause, params } = buildResolucaoWhere(req.query);
-    const competencia = req.query.comp || req.query.competencia || null; // Aceitar 'comp' ou 'competencia'
+    let { whereClause, params } = buildResolucaoWhere(req.query);
+    const competencia = req.query.comp || req.query.competencia || null;
+    const busca = req.query.busca;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 30;
     const offset = (page - 1) * limit;
+
+    // Busca textual (CPF, CNES, CBO)
+    if (busca && busca.trim()) {
+      const buscaParam = `%${busca.trim()}%`;
+      const buscaCond = `(v.nu_cpf ILIKE $${params.length + 1} OR v.co_cnes::text ILIKE $${params.length + 1} OR v.ds_cbo_ocupacao ILIKE $${params.length + 1})`;
+      whereClause = whereClause ? whereClause + ` AND ${buscaCond}` : `WHERE ${buscaCond}`;
+      params.push(buscaParam);
+    }
 
     const compFilter = competencia ? `AND e.nu_comp = '${competencia}'` : '';
 
@@ -1936,12 +2170,12 @@ app.get('/api/resolucao/tabela', async (req, res) => {
           WHEN e.co_cpf IS NOT NULL THEN 'Resolvida'
           ELSE 'Pendente'
         END as status
-      FROM censo.vinculos v
-      LEFT JOIN censo.recenseamento r ON v.co_cnes = r.co_cnes
+      FROM censo.recenseados_nova v
+      LEFT JOIN censo.recenseamento_nova r ON v.co_cnes = r.co_cnes
       LEFT JOIN censo.espelho_cnes e 
         ON e.co_cpf = v.nu_cpf 
         AND e.co_cnes = v.co_cnes
-        AND e.co_cbo = v.co_cbo_ocupacao
+        AND e.co_cbo = v.co_cbo_ocupacao::text
         AND e.ind_vinculacao = v.nu_vinculacao
         ${compFilter}
       ${whereClause}
@@ -1952,9 +2186,9 @@ app.get('/api/resolucao/tabela', async (req, res) => {
 
     // Query de contagem total
     const countQuery = `
-      SELECT COUNT(DISTINCT v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar, '') || '|' || COALESCE(v.qt_carga_horaria_outros, '')) as total
-      FROM censo.vinculos v
-      LEFT JOIN censo.recenseamento r ON v.co_cnes = r.co_cnes
+      SELECT COUNT(DISTINCT v.nu_cpf || '|' || v.co_cnes || '|' || v.co_cbo_ocupacao::text || '|' || v.nu_vinculacao || '|' || COALESCE(v.qt_carga_horaria_ambulatorial::text, '') || '|' || COALESCE(v.qt_carga_horaria_hospitalar::text, '') || '|' || COALESCE(v.qt_carga_horaria_outros::text, '')) as total
+      FROM censo.recenseados_nova v
+      LEFT JOIN censo.recenseamento_nova r ON v.co_cnes = r.co_cnes
       ${whereClause}
       ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
     `;

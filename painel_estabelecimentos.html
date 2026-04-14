@@ -174,16 +174,44 @@
     line-height: 1.7;
   }
 
+  /* FILTER TOGGLE BAR */
+  .filter-toggle-bar {
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 32px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+  }
+  .filter-toggle-bar:hover { background: var(--surface); color: var(--accent); }
+  .filter-toggle-icon { font-size: 10px; transition: transform 0.2s; }
+  .filter-toggle-label { font-weight: 600; letter-spacing: 0.5px; }
+  .filter-active-badge {
+    background: var(--accent);
+    color: #fff;
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-size: 10px;
+    font-weight: 700;
+    margin-left: 4px;
+  }
+
   /* FILTERS */
   .fbar {
     background: var(--surface2);
     border-bottom: 1px solid var(--border);
     padding: 14px 32px;
-    display: flex;
+    display: none;
     gap: 16px;
     flex-wrap: wrap;
     align-items: flex-start;
   }
+  .fbar.open { display: flex; }
 
   .filter-section {
     background: var(--surface);
@@ -385,6 +413,14 @@
     line-height: 1;
   }
 
+  /* Cards de destaque: fontes maiores para os dois indicadores principais */
+  .kpi-card.kpi-primary .kpi-value {
+    font-size: 42px;
+  }
+  .kpi-card.kpi-primary .kpi-label {
+    font-size: 11px;
+  }
+
   .kpi-sub {
     font-size: 11px;
     color: var(--text-muted);
@@ -439,6 +475,29 @@
   }
 
   .chart-wrap.tall { height: 300px; }
+
+  .chart-scroll-outer {
+    overflow-y: auto;
+    max-height: 420px;
+  }
+  /* wrapper interno: posicionado para o Chart.js calcular coordenadas corretamente */
+  .chart-scroll-inner {
+    position: relative;
+    min-height: 120px;
+  }
+
+  .btn-export {
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-family: 'Sora', sans-serif;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-export:hover { background: var(--accent); color: #fff; }
 
   /* PROGRESS BARS */
   .progress-list {
@@ -657,7 +716,14 @@
   </div>
 </header>
 
-<div class="fbar">
+<!-- Filter Toggle Bar -->
+<div class="filter-toggle-bar" id="filter-toggle-bar" onclick="toggleFilters()">
+  <span class="filter-toggle-icon" id="filter-toggle-icon">▶</span>
+  <span class="filter-toggle-label">Filtros de Pesquisa</span>
+  <span id="filter-active-badge" class="filter-active-badge" style="display:none">0</span>
+</div>
+
+<div class="fbar" id="fbar">
   <!-- Seção 1: Localização -->
   <div class="filter-section">
     <div class="filter-section-title">Localização</div>
@@ -679,7 +745,7 @@
         <select id="f-regional"><option value="">Todas</option></select>
       </div>
       <div class="filter-group">
-        <label>Município</label>
+        <label>Municípios / RAs</label>
         <select id="f-municipio"><option value="">Todos</option></select>
       </div>
     </div>
@@ -735,22 +801,22 @@
   <!-- KPIs -->
   <div class="section-label">Indicadores Gerais</div>
   
-  <!-- Primeira linha: Estabelecimentos, Distribuídos e Vínculos -->
+  <!-- Primeira linha: Estabelecimentos, Vínculos e Vínculos Recenseados -->
   <div class="kpi-row primeira-linha" style="grid-template-columns:1fr 1fr 1fr;">
-    <div class="kpi-card" style="--card-accent: var(--accent)">
+    <div class="kpi-card kpi-primary" style="--card-accent: var(--accent)">
       <div class="kpi-label">Estabelecimentos</div>
       <div class="kpi-value" id="kpi-total">—</div>
       <div class="kpi-sub">no filtro atual</div>
     </div>
-    <div class="kpi-card" style="--card-accent: var(--accent2)">
-      <div class="kpi-label">Estabelecimentos Distribuídos</div>
-      <div class="kpi-value" id="kpi-distribuidos">—</div>
-      <div class="kpi-sub">com recenseador atribuído</div>
-    </div>
-    <div class="kpi-card" style="--card-accent: var(--accent3)">
+    <div class="kpi-card kpi-primary" style="--card-accent: var(--accent3)">
       <div class="kpi-label">Total de Vínculos</div>
       <div class="kpi-value" id="kpi-vinculos">—</div>
       <div class="kpi-sub">soma dos estabelecimentos</div>
+    </div>
+    <div class="kpi-card kpi-primary" style="--card-accent: var(--accent2)">
+      <div class="kpi-label">Total de Vínculos Recenseados</div>
+      <div class="kpi-value" id="kpi-vinculos-recenseados">—</div>
+      <div class="kpi-sub">registros em recenseados_nova</div>
     </div>
   </div>
 
@@ -783,6 +849,22 @@
       <div class="chart-title"><span style="background:var(--accent3)"></span> Por Macrorregião</div>
       <div class="chart-wrap"><canvas id="chart-macro"></canvas></div>
     </div>
+    <div class="chart-card">
+      <div class="chart-title"><span style="background:var(--accent2)"></span> Por Região de Saúde</div>
+      <div class="chart-scroll-outer" id="chart-regional-outer">
+        <div class="chart-scroll-inner" id="chart-regional-wrap">
+          <canvas id="chart-regional-bar"></canvas>
+        </div>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title"><span style="background:var(--accent4)"></span> Por Município</div>
+      <div class="chart-scroll-outer" id="chart-municipio-outer">
+        <div class="chart-scroll-inner" id="chart-municipio-wrap">
+          <canvas id="chart-municipio"></canvas>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Regional progress -->
@@ -810,7 +892,10 @@
   <div class="table-wrap">
     <div class="table-header">
       <h3>Estabelecimentos <span id="table-count" style="color:var(--text);font-family:JetBrains Mono,monospace;font-size:11px;margin-left:8px"></span></h3>
-      <input class="search-input" id="table-search" placeholder="Buscar por nome, CNES, município…" oninput="renderTable()">
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input class="search-input" id="table-search" placeholder="Buscar por nome, CNES, município…" oninput="renderTable()">
+        <button class="btn-export" onclick="exportCSV()" title="Exportar todos os registros filtrados">↓ CSV</button>
+      </div>
     </div>
     <div class="table-scroll">
       <table>
@@ -852,6 +937,58 @@
 // ==========================================
 let D = null;
 const CH = {};
+let activeFiltersEstab = {};
+
+// Ordem canônica das situações no gráfico
+// Chaves == valores exatos retornados pelo banco (situacao_recenseamento)
+const SITUACAO_ORDER = [
+  'Concluído',
+  'Devolvido para Correção',
+  'Enviado para Validação',
+  'Participação Recusada',
+  'Em Andamento',
+  'Não Iniciado',
+  'Contato sem Sucesso'
+];
+
+// Cores fixas por situação (KPI cards e gráfico)
+const SITUACAO_COLORS = {
+  'Concluído':              '#3fb950', // verde
+  'Em Andamento':           '#ff8c42', // laranja
+  'Não Iniciado':           '#4a90e2', // azul
+  'Enviado para Validação': '#f85149', // vermelho
+  'Devolvido para Correção':'#9b59b6', // roxo
+  'Participação Recusada':  '#d29922', // amarelo/ouro
+  'Contato sem Sucesso':    '#7a9ab8'  // cinza-azulado
+};
+
+// ==========================================
+// TOGGLE FILTROS
+// ==========================================
+function toggleFilters() {
+  const fbar = document.getElementById('fbar');
+  const icon = document.getElementById('filter-toggle-icon');
+  if (fbar.classList.contains('open')) {
+    fbar.classList.remove('open');
+    icon.textContent = '▶';
+  } else {
+    fbar.classList.add('open');
+    icon.textContent = '▼';
+  }
+}
+
+function updateFilterBadge() {
+  const count = Object.values(activeFiltersEstab).filter(v => v && v !== '').length;
+  const badge = document.getElementById('filter-active-badge');
+  if (badge) {
+    if (count > 0) {
+      badge.textContent = count;
+      badge.style.display = 'inline-block';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+}
 
 // ==========================================
 // FUNÇÕES DE UI
@@ -909,7 +1046,7 @@ async function loadDataFromAPI() {
     
     showLoading('Carregando dados...');
     
-    const [statsRes, situacaoRes, ufRes, esferaRes, macroRes, regionalRes, recenseadorRes, filtrosRes] = await Promise.all([
+    const [statsRes, situacaoRes, ufRes, esferaRes, macroRes, regionalRes, recenseadorRes, filtrosRes, municipioRes, filtrosDFRes] = await Promise.all([
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_STATS),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_SITUACAO),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_UF),
@@ -917,13 +1054,15 @@ async function loadDataFromAPI() {
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_MACRO),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_REGIONAL),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_RECENSEADOR),
-      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_FILTROS)
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_FILTROS),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_MUNICIPIO),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_FILTROS_DF)
     ]);
-    
+
     if (!statsRes.success) throw new Error(statsRes.error);
     if (!situacaoRes.success) throw new Error(situacaoRes.error);
     if (!ufRes.success) throw new Error(ufRes.error);
-    
+
     D = {
       stats: statsRes.data,
       situacoes: situacaoRes.data,
@@ -931,8 +1070,10 @@ async function loadDataFromAPI() {
       esferas: esferaRes.success ? esferaRes.data : [],
       macros: macroRes.success ? macroRes.data : [],
       regionais: regionalRes.success ? regionalRes.data : [],
+      municipios: municipioRes.success ? municipioRes.data : [],
       recenseadores: recenseadorRes.success ? recenseadorRes.data : [],
-      filtros: filtrosRes.success ? filtrosRes.data : null
+      filtros: filtrosRes.success ? filtrosRes.data : null,
+      filtrosDF: filtrosDFRes.success ? filtrosDFRes.data : null
     };
     
     console.log('✅ Dados carregados:', D);
@@ -957,61 +1098,126 @@ async function loadDataFromAPI() {
 // ==========================================
 // POPULAR FILTROS
 // ==========================================
-function populateFilters() {
+
+// Popula um select com itens que podem ser string simples ou {valor, uf}
+function populateSelect(id, items, selectedUF) {
+  const select = document.getElementById(id);
+  if (!select) return;
+  while (select.options.length > 1) select.remove(1);
+
+  const isGeoItem = items.length > 0 && typeof items[0] === 'object' && items[0].valor !== undefined;
+
+  const filtered = isGeoItem && selectedUF
+    ? items.filter(item => item.uf === selectedUF)
+    : items;
+
+  filtered.forEach(item => {
+    const option = document.createElement('option');
+    if (isGeoItem) {
+      option.value = item.valor;
+      option.textContent = item.uf ? `[${item.uf}] ${item.valor}` : item.valor;
+    } else {
+      option.value = item;
+      option.textContent = item;
+    }
+    select.appendChild(option);
+  });
+}
+
+/**
+ * Popula um select mesclando itens padrão (CNES) com itens DF em optgroups separados.
+ * O grupo DF só aparece quando nenhuma UF é selecionada ou quando UF = 'DF'.
+ */
+function populateSelectMerged(id, standardItems, dfItems, selectedUF) {
+  const select = document.getElementById(id);
+  if (!select) return;
+  // Salvar placeholder ("Todos" / "Todas") e limpar TODO o conteúdo,
+  // incluindo <optgroup> de chamadas anteriores — sem isso ficam duplicados.
+  const placeholder = select.querySelector('option[value=""]');
+  const placeholderHTML = placeholder ? placeholder.outerHTML : '<option value=""></option>';
+  select.innerHTML = placeholderHTML;
+
+  const isGeoItem = standardItems.length > 0 && typeof standardItems[0] === 'object';
+  const filtered = isGeoItem && selectedUF
+    ? standardItems.filter(item => item.uf === selectedUF)
+    : standardItems;
+
+  // Grupo: valores padrão CNES
+  if (filtered.length > 0) {
+    const grp = document.createElement('optgroup');
+    grp.label = 'Padrão CNES';
+    filtered.forEach(item => {
+      const opt = document.createElement('option');
+      if (isGeoItem) {
+        opt.value = item.valor;
+        opt.textContent = item.uf ? `[${item.uf}] ${item.valor}` : item.valor;
+      } else {
+        opt.value = item;
+        opt.textContent = item;
+      }
+      grp.appendChild(opt);
+    });
+    select.appendChild(grp);
+  }
+
+  // Grupo: valores DF — só exibe se sem filtro de UF ou UF = DF
+  const showDF = !selectedUF || selectedUF === 'DF';
+  if (showDF && dfItems && dfItems.length > 0) {
+    const grpDF = document.createElement('optgroup');
+    grpDF.label = 'Classificação DF';
+    dfItems.forEach(val => {
+      const opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = val;
+      grpDF.appendChild(opt);
+    });
+    select.appendChild(grpDF);
+  }
+}
+
+function populateFilters(selectedUF) {
   if (!D || !D.filtros) {
     console.warn('⚠️ D.filtros não disponível');
     return;
   }
-  
-  console.log('📋 Populando filtros com dados:', D.filtros);
-  
-  // Popular selects com valores da API
-  const filters = {
-    'f-macro': D.filtros.macrorregiao || [],
-    'f-regional': D.filtros.regional || [],
-    'f-municipio': D.filtros.municipio || [],
-    'f-situacao': D.filtros.situacao || [],
-    'f-esfera': D.filtros.esfera || [],
-    'f-recenseador': D.filtros.recenseador || [],
-    'f-estrategia': D.filtros.estrategia || [],
-    'f-tp-unidade': D.filtros.tp_unidade || []
-  };
-  
-  Object.entries(filters).forEach(([id, values]) => {
-    const select = document.getElementById(id);
-    
-    if (!select) {
-      console.warn(`⚠️ Elemento ${id} não encontrado no DOM`);
-      return;
-    }
-    
-    if (values.length === 0) {
-      console.warn(`⚠️ Nenhum valor para ${id}`);
-      return;
-    }
-    
-    console.log(`✓ Populando ${id} com ${values.length} opções`);
-    
-    // Limpar opções existentes (exceto a primeira "Todas/Todos")
-    while (select.options.length > 1) {
-      select.remove(1);
-    }
-    
-    // Adicionar novas opções
-    values.forEach(value => {
-      const option = document.createElement('option');
-      option.value = value;
-      option.textContent = value;
-      select.appendChild(option);
-    });
-  });
-  
+
+  const uf = selectedUF || '';
+
+  const dfRegioesSaude = D.filtrosDF ? (D.filtrosDF.regioes_saude_df || []) : [];
+  const dfRegioesAdm   = D.filtrosDF ? (D.filtrosDF.regioes_adm_df   || []) : [];
+
+  populateSelect('f-macro', D.filtros.macrorregiao || [], uf);
+
+  // Regiões de Saúde — mescla padrão CNES + classificação DF
+  populateSelectMerged('f-regional', D.filtros.regional  || [], dfRegioesSaude, uf);
+
+  // Municípios / RAs — mescla padrão CNES + regiões administrativas DF
+  populateSelectMerged('f-municipio', D.filtros.municipio || [], dfRegioesAdm,   uf);
+
+  populateSelect('f-situacao',    D.filtros.situacao    || [], '');
+  populateSelect('f-esfera',      D.filtros.esfera      || [], '');
+  populateSelect('f-recenseador', D.filtros.recenseador || [], '');
+  populateSelect('f-estrategia',  D.filtros.estrategia  || [], '');
+  populateSelect('f-tp-unidade',  D.filtros.tp_unidade  || [], '');
+
   console.log('✅ Filtros populados');
 }
 
 // ==========================================
 // SELECT2 — AUTOCOMPLETE
 // ==========================================
+function initSelect2Single($sel) {
+  $sel.select2({
+    placeholder: 'Selecione...',
+    allowClear: true,
+    width: '100%',
+    language: {
+      noResults: () => 'Nenhum resultado encontrado',
+      searching: () => 'Buscando...'
+    }
+  });
+}
+
 function initializeSelect2() {
   const filterIds = [
     'f-uf', 'f-macro', 'f-regional', 'f-municipio',
@@ -1023,18 +1229,32 @@ function initializeSelect2() {
     const $select = $('#' + id);
     if ($select.length) {
       if ($select.data('select2')) $select.select2('destroy');
-      $select.select2({
-        placeholder: 'Selecione...',
-        allowClear: true,
-        width: '100%',
-        language: {
-          noResults: () => 'Nenhum resultado encontrado',
-          searching: () => 'Buscando...'
-        }
-      });
+      initSelect2Single($select);
+
       // Evento Select2
-      $select.on('select2:select select2:clear', async function() {
-        console.log(`🔄 Filtro ${id} alterado para:`, $(this).val());
+      $select.off('select2:select select2:clear').on('select2:select select2:clear', async function() {
+        const val = $(this).val() || '';
+        console.log(`🔄 Filtro ${id} alterado para:`, val);
+
+        // Cascata: UF filtra Macro/Regional/Município
+        if (id === 'f-uf') {
+          // Limpar selects dependentes
+          ['f-macro', 'f-regional', 'f-municipio'].forEach(depId => {
+            const $dep = $('#' + depId);
+            if ($dep.data('select2')) $dep.val('').trigger('change.select2');
+          });
+          // Repopular com UF selecionada
+          populateFilters(val);
+          // Re-inicializar Select2 nos dependentes
+          ['f-macro', 'f-regional', 'f-municipio'].forEach(depId => {
+            const $dep = $('#' + depId);
+            if ($dep.data('select2')) $dep.select2('destroy');
+            initSelect2Single($dep);
+            $dep.off('select2:select select2:clear').on('select2:select select2:clear', async function() {
+              await reloadWithFilters();
+            });
+          });
+        }
         await reloadWithFilters();
       });
     }
@@ -1062,17 +1282,27 @@ async function reloadWithFilters() {
     
     // Coletar valores dos filtros (compatível com Select2 e native)
     const gv = id => ($('#' + id).val() || '');
+    // Detectar se o valor selecionado em f-regional / f-municipio é DF ou padrão CNES
+    const regionalVal  = gv('f-regional');
+    const municipioVal = gv('f-municipio');
+    const dfRegioesSaude = (D.filtrosDF && D.filtrosDF.regioes_saude_df) || [];
+    const dfRegioesAdm   = (D.filtrosDF && D.filtrosDF.regioes_adm_df)   || [];
+    const isDFRegional = dfRegioesSaude.includes(regionalVal);
+    const isDFMunicipio = dfRegioesAdm.includes(municipioVal);
+
     const filters = {
-      uf:          gv('f-uf'),
-      macrorregiao:gv('f-macro'),
-      regional:    gv('f-regional'),
-      municipio:   gv('f-municipio'),
-      situacao:    gv('f-situacao'),
-      recenseador: gv('f-recenseador'),
-      estrategia:  gv('f-estrategia'),
-      sus:         gv('f-sus'),
-      esfera:      gv('f-esfera'),
-      tp_unidade:  gv('f-tp-unidade')
+      uf:              gv('f-uf'),
+      macrorregiao:    gv('f-macro'),
+      regional:        isDFRegional  ? '' : regionalVal,   // padrão CNES
+      municipio:       isDFMunicipio ? '' : municipioVal,  // padrão CNES
+      situacao:        gv('f-situacao'),
+      recenseador:     gv('f-recenseador'),
+      estrategia:      gv('f-estrategia'),
+      sus:             gv('f-sus'),
+      esfera:          gv('f-esfera'),
+      tp_unidade:      gv('f-tp-unidade'),
+      regiao_saude_df: isDFRegional  ? regionalVal  : '', // classificação DF
+      regiao_adm_df:   isDFMunicipio ? municipioVal : ''  // classificação DF
     };
     
     // Construir query string
@@ -1086,21 +1316,29 @@ async function reloadWithFilters() {
     
     console.log('📊 Recarregando com filtros:', filters);
     
+    // Salvar filtros ativos para uso em busca e paginação
+    activeFiltersEstab = filters;
+    updateFilterBadge();
+
     // Recarregar todos os dados
-    const [statsRes, situacaoRes, ufRes, esferaRes, macroRes] = await Promise.all([
+    const [statsRes, situacaoRes, ufRes, esferaRes, macroRes, regionalRes, municipioRes] = await Promise.all([
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_STATS + urlSuffix),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_SITUACAO + urlSuffix),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_UF + urlSuffix),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_ESFERA + urlSuffix),
-      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_MACRO + urlSuffix)
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_MACRO + urlSuffix),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_REGIONAL + urlSuffix),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_MUNICIPIO + urlSuffix)
     ]);
-    
+
     // Atualizar D com novos dados
     D.stats = statsRes.success ? statsRes.data : D.stats;
     D.situacoes = situacaoRes.success ? situacaoRes.data : D.situacoes;
     D.ufs = ufRes.success ? ufRes.data : D.ufs;
     D.esferas = esferaRes.success ? esferaRes.data : D.esferas;
     D.macros = macroRes.success ? macroRes.data : D.macros;
+    D.regionais = regionalRes.success ? regionalRes.data : D.regionais;
+    D.municipios = municipioRes.success ? municipioRes.data : D.municipios;
     
     // Atualizar UI
     updateKPIs();
@@ -1129,15 +1367,24 @@ function updateKPIs() {
   
   set('kpi-total', fmt(D.stats.total_estabelecimentos));
   set('kpi-vinculos', fmt(D.stats.total_vinculos || 0));
+  set('kpi-vinculos-recenseados', fmt(D.stats.total_vinculos_recenseados || 0));
   
-  // Criar cards de situação
+  // Criar cards de situação com cores fixas por status
   if (D.situacoes && D.situacoes.length > 0) {
     const container = document.getElementById('kpi-situacoes');
     if (container) {
-      const sorted = [...D.situacoes].sort((a, b) => parseInt(b.quantidade) - parseInt(a.quantidade));
-      
-      container.innerHTML = sorted.map((sit, idx) => {
-        const cor = idx === 0 ? 'var(--accent)' : `var(--accent${(idx % 6) + 1})`;
+      // Ordenar pela ordem canônica; situações não mapeadas vão para o final
+      const sorted = [...D.situacoes].sort((a, b) => {
+        const ai = SITUACAO_ORDER.indexOf(a.situacao);
+        const bi = SITUACAO_ORDER.indexOf(b.situacao);
+        if (ai === -1 && bi === -1) return parseInt(b.quantidade) - parseInt(a.quantidade);
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      });
+
+      container.innerHTML = sorted.map(sit => {
+        const cor = SITUACAO_COLORS[sit.situacao] || '#4a90e2';
         return `
           <div class="kpi-card" style="--card-accent: ${cor}">
             <div class="kpi-label">${sit.situacao}</div>
@@ -1162,18 +1409,35 @@ function destroyChart(id) {
   }
 }
 
+/**
+ * Formata o rótulo geográfico evitando duplicação do prefixo UF.
+ * Ex.: se nome já termina em "(DF)", não adiciona "[DF]" na frente.
+ */
+function geoLabel(uf, nome) {
+  if (!uf) return nome;
+  if (nome && nome.endsWith(`(${uf})`)) return nome; // já contém a UF
+  return `[${uf}] ${nome}`;
+}
+
 function renderCharts() {
   if (!D) return;
   
   console.log('📊 Renderizando gráficos...');
   
-  // Gráfico 1: Situação (barras verticais ordenadas)
+  // Gráfico 1: Situação (barras verticais — ordem canônica com cores fixas)
   if (D.situacoes && D.situacoes.length > 0) {
     const ctx = document.getElementById('chart-situacao');
     if (ctx) {
-      // Ordenar por quantidade decrescente
-      const sorted = [...D.situacoes].sort((a, b) => parseInt(b.quantidade) - parseInt(a.quantidade));
-      
+      // Ordenar pela ordem canônica predefinida
+      const sorted = [...D.situacoes].sort((a, b) => {
+        const ai = SITUACAO_ORDER.indexOf(a.situacao);
+        const bi = SITUACAO_ORDER.indexOf(b.situacao);
+        if (ai === -1 && bi === -1) return 0;
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      });
+
       destroyChart('situacao');
       CH['situacao'] = new Chart(ctx, {
         type: 'bar',
@@ -1181,7 +1445,7 @@ function renderCharts() {
           labels: sorted.map(s => s.situacao),
           datasets: [{
             data: sorted.map(s => parseInt(s.quantidade)),
-            backgroundColor: ['#3fb950', '#d29922', '#4a90e2', '#f85149', '#9b59b6', '#ff7b72', '#7a9ab8'],
+            backgroundColor: sorted.map(s => SITUACAO_COLORS[s.situacao] || '#4a90e2'),
             borderRadius: 4
           }]
         },
@@ -1307,6 +1571,86 @@ function renderCharts() {
     }
   }
   
+  // Gráfico 4b: Região de Saúde (barras horizontais com scroll)
+  if (D.regionais && D.regionais.length > 0) {
+    const ctx  = document.getElementById('chart-regional-bar');
+    const wrap = document.getElementById('chart-regional-wrap');
+    if (ctx && wrap) {
+      const sorted = [...D.regionais].sort((a, b) => parseInt(b.total) - parseInt(a.total));
+      // Altura proporcional ao número de barras; sem mínimo excessivo para evitar scroll falso
+      const barH  = 34;
+      const chartH = Math.max(120, sorted.length * barH);
+      // Controlar altura pelo wrapper (pai position:relative) — o canvas preenche via responsive:true
+      wrap.style.height = chartH + 'px';
+
+      destroyChart('regional-bar');
+      CH['regional-bar'] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: sorted.map(r => geoLabel(r.sg_uf, r.regional)),
+          datasets: [{
+            label: 'Estabelecimentos',
+            data: sorted.map(r => parseInt(r.total)),
+            backgroundColor: '#3fb950',
+            borderRadius: 3
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,           // deixa Chart.js medir o canvas pelo CSS do wrapper
+          maintainAspectRatio: false, // ignora proporção — respeita a altura do wrapper
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: true }
+          },
+          scales: {
+            x: { ticks: { color: '#7a9ab8', font: { size: 10 } }, grid: { color: '#2a4270' } },
+            y: { ticks: { color: '#7a9ab8', font: { size: 9 } },  grid: { color: '#2a4270' } }
+          }
+        }
+      });
+    }
+  }
+
+  // Gráfico 4c: Município (barras horizontais com scroll)
+  if (D.municipios && D.municipios.length > 0) {
+    const ctx  = document.getElementById('chart-municipio');
+    const wrap = document.getElementById('chart-municipio-wrap');
+    if (ctx && wrap) {
+      const sorted = [...D.municipios].sort((a, b) => parseInt(b.quantidade) - parseInt(a.quantidade));
+      const barH  = 30;
+      const chartH = Math.max(120, sorted.length * barH);
+      wrap.style.height = chartH + 'px';
+
+      destroyChart('municipio');
+      CH['municipio'] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: sorted.map(m => geoLabel(m.sg_uf, m.municipio)),
+          datasets: [{
+            label: 'Estabelecimentos',
+            data: sorted.map(m => parseInt(m.quantidade)),
+            backgroundColor: '#f85149',
+            borderRadius: 3
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: true }
+          },
+          scales: {
+            x: { ticks: { color: '#7a9ab8', font: { size: 10 } }, grid: { color: '#2a4270' } },
+            y: { ticks: { color: '#7a9ab8', font: { size: 9 } },  grid: { color: '#2a4270' } }
+          }
+        }
+      });
+    }
+  }
+
   // Gráfico 5: % Concluído por Regional (progress list)
   if (D.regionais && D.regionais.length > 0) {
     const container = document.getElementById('progress-regional');
@@ -1316,16 +1660,15 @@ function renderCharts() {
         const pct = parseFloat(r.percentual);
         const total = parseInt(r.total);
         const concluidos = parseInt(r.concluidos);
+        const label = geoLabel(r.sg_uf, r.regional);
+        const color = pct >= 80 ? '#3fb950' : pct >= 50 ? '#d29922' : '#f85149';
         return `
           <div class="progress-item">
-            <div class="progress-header">
-              <span class="progress-label">${r.regional}</span>
-              <span class="progress-value">${pct.toFixed(1)}%</span>
-            </div>
+            <div class="name" title="${label}">${label}</div>
             <div class="progress-bar">
-              <div class="progress-fill" style="width: ${pct}%; background: #3fb950"></div>
+              <div class="progress-fill" style="width: ${pct}%; background: ${color}"></div>
             </div>
-            <div class="progress-sub">${concluidos.toLocaleString('pt-BR')} de ${total.toLocaleString('pt-BR')} concluídos</div>
+            <div class="count">${pct.toFixed(1)}%</div>
           </div>
         `;
       }).join('');
@@ -1373,10 +1716,6 @@ function renderCharts() {
   
   // Gráfico 7: % Concluído por Recenseador
   if (D.recenseadores && D.recenseadores.length > 0) {
-    // KPI: total de estabelecimentos distribuídos (com recenseador)
-    const totalDistribuidos = D.recenseadores.reduce((sum, r) => sum + parseInt(r.total || 0), 0);
-    const elDist = document.getElementById('kpi-distribuidos');
-    if (elDist) elDist.textContent = totalDistribuidos.toLocaleString('pt-BR');
 
     const ctx = document.getElementById('chart-recenseador-pct');
     if (ctx) {
@@ -1502,14 +1841,71 @@ async function loadTableData(page = 1, filters = {}) {
   }
 }
 
+// renderTable: chamado pelo campo de busca (oninput)
+let searchDebounceEstab = null;
+function renderTable() {
+  clearTimeout(searchDebounceEstab);
+  searchDebounceEstab = setTimeout(() => {
+    const busca = document.getElementById('table-search')?.value || '';
+    const filters = { ...activeFiltersEstab, busca };
+    loadTableData(1, filters);
+  }, 400);
+}
+
 function previousPage() {
+  const busca = document.getElementById('table-search')?.value || '';
   if (currentPage > 1) {
-    loadTableData(currentPage - 1);
+    loadTableData(currentPage - 1, { ...activeFiltersEstab, busca });
   }
 }
 
 function nextPage() {
-  loadTableData(currentPage + 1);
+  const busca = document.getElementById('table-search')?.value || '';
+  loadTableData(currentPage + 1, { ...activeFiltersEstab, busca });
+}
+
+// ==========================================
+// EXPORTAR CSV
+// ==========================================
+async function exportCSV() {
+  try {
+    showLoading('Exportando dados...');
+    const busca = document.getElementById('table-search')?.value || '';
+    const filters = { ...activeFiltersEstab, busca, page: 1, limit: 99999 };
+    const queryParams = new URLSearchParams();
+    Object.entries(filters).forEach(([k, v]) => { if (v) queryParams.append(k, v); });
+
+    const result = await apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_LISTA + '?' + queryParams.toString());
+    hideLoading();
+    if (!result.success) { alert('Erro ao exportar: ' + result.error); return; }
+
+    const rows = result.data.data;
+    const headers = ['CNES','Nome Fantasia','UF','Município','Regional de Saúde','Esfera','Vínculo SUS','Total Vínculos','Recenseador','Situação','Dt. Atualização'];
+    const fmtDate = d => { try { return d ? new Date(d).toLocaleDateString('pt-BR') : ''; } catch { return d||''; } };
+    const csvRows = rows.map(r => [
+      r.co_cnes||'', r.no_fantasia||'', r.sg_uf||'', r.no_municipio||'', r.no_regional_saude||'',
+      r.esfera||'', r.vinculado_sus==='S'?'Sim':r.vinculado_sus==='N'?'Não':'',
+      r.total_vinculos!=null?parseInt(r.total_vinculos):'', r.recenseador||'',
+      r.situacao_recenseamento||'', fmtDate(r.dt_atualizacao)
+    ]);
+
+    const csv = [headers, ...csvRows]
+      .map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'estabelecimentos_' + new Date().toISOString().slice(0,10) + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    hideLoading();
+    console.error('Erro CSV:', err);
+  }
 }
 
 // ==========================================
@@ -1524,11 +1920,26 @@ async function resetFilters() {
   allIds.forEach(id => {
     const $el = $('#' + id);
     if ($el.data('select2')) {
-      $el.val('').trigger('change.select2'); // limpa Select2 sem disparar reload
+      $el.val('').trigger('change.select2');
     } else if ($el.length) {
       $el.val('');
     }
   });
+  // Restaurar todos os geo-options sem filtro de UF
+  populateFilters('');
+  // Reiniciar Select2 nos selects de geo
+  ['f-macro', 'f-regional', 'f-municipio'].forEach(id => {
+    const $sel = $('#' + id);
+    if ($sel.data('select2')) $sel.select2('destroy');
+    initSelect2Single($sel);
+    $sel.on('select2:select select2:clear', async function() { await reloadWithFilters(); });
+  });
+
+  activeFiltersEstab = {};
+  updateFilterBadge();
+  // Limpar busca
+  const searchEl = document.getElementById('table-search');
+  if (searchEl) searchEl.value = '';
   await reloadWithFilters();
 }
 

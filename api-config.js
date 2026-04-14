@@ -27,8 +27,10 @@ const API_CONFIG = {
     ESTABELECIMENTOS_POR_MACRO: '/api/estabelecimentos/por-macro',
     ESTABELECIMENTOS_POR_REGIONAL: '/api/estabelecimentos/por-regional',
     ESTABELECIMENTOS_POR_RECENSEADOR: '/api/estabelecimentos/por-recenseador',
+    ESTABELECIMENTOS_POR_MUNICIPIO: '/api/estabelecimentos/por-municipio',
     ESTABELECIMENTOS_LISTA: '/api/estabelecimentos/lista',
     ESTABELECIMENTOS_FILTROS: '/api/estabelecimentos/filtros',
+    ESTABELECIMENTOS_FILTROS_DF: '/api/estabelecimentos/filtros-df',
     
     // Vínculos
     VINCULOS_STATS: '/api/vinculos/stats',
@@ -90,6 +92,7 @@ const ENDPOINT_TIMEOUTS = {
   '/api/resolucao/stats':     180000, // 3 min — 5 queries sequenciais
   '/api/resolucao/tabela':    120000,
   '/api/vinculos/agregados':  180000,
+  '/api/estabelecimentos/por-municipio': 60000,
 };
 
 async function apiRequest(endpoint, params = {}) {
