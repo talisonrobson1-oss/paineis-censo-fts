@@ -1270,8 +1270,8 @@ app.get('/api/vinculos/nao-alterados', async (req, res) => {
     // Total de vínculos no espelho CNES (Ago/2025)
     const totalQuery = `
       SELECT COUNT(*) as total
-      FROM censo.espelho_cnes
-      WHERE nu_comp = $1
+      FROM censo.espelho_cnes_nova
+      WHERE nu_comp::text = $1
     `;
     const totalResult = await pool.query(totalQuery, [competencia]);
     const totalEspelho = parseInt(totalResult.rows[0].total);
@@ -1279,11 +1279,11 @@ app.get('/api/vinculos/nao-alterados', async (req, res) => {
     // Vínculos alterados pelo projeto (que existem no recenseamento)
     const alteradosQuery = `
       SELECT COUNT(DISTINCT e.co_cpf || '|' || e.co_cnes) as alterados
-      FROM censo.espelho_cnes e
-      INNER JOIN censo.recenseados_nova v 
-        ON e.co_cpf = v.nu_cpf 
+      FROM censo.espelho_cnes_nova e
+      INNER JOIN censo.recenseados_nova v
+        ON e.co_cpf = v.nu_cpf
         AND e.co_cnes = v.co_cnes
-      WHERE e.nu_comp = $1
+      WHERE e.nu_comp::text = $1
     `;
     const alteradosResult = await pool.query(alteradosQuery, [competencia]);
     const alterados = parseInt(alteradosResult.rows[0].alterados);
@@ -1490,8 +1490,8 @@ app.get('/api/resolucao/stats', async (req, res) => {
       SELECT COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) as resolvidas
       FROM censo.recenseados_nova v
       ${recenseamentoJoin}
-      INNER JOIN censo.espelho_cnes e 
-        ON e.co_cpf = v.nu_cpf 
+      INNER JOIN censo.espelho_cnes_nova e
+        ON e.co_cpf = v.nu_cpf
         AND e.co_cnes = v.co_cnes
         AND e.co_cbo = v.co_cbo_ocupacao::text
         AND e.ind_vinculacao = v.nu_vinculacao
@@ -1505,8 +1505,8 @@ app.get('/api/resolucao/stats', async (req, res) => {
       SELECT COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) as resolvidas
       FROM censo.recenseados_nova v
       ${recenseamentoJoin}
-      LEFT JOIN censo.espelho_cnes e 
-        ON e.co_cpf = v.nu_cpf 
+      LEFT JOIN censo.espelho_cnes_nova e
+        ON e.co_cpf = v.nu_cpf
         AND e.co_cnes = v.co_cnes
         AND e.co_cbo = v.co_cbo_ocupacao::text
         AND e.ind_vinculacao = v.nu_vinculacao
@@ -1523,8 +1523,8 @@ app.get('/api/resolucao/stats', async (req, res) => {
       SELECT COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) as resolvidas
       FROM censo.recenseados_nova v
       ${recenseamentoJoin}
-      INNER JOIN censo.espelho_cnes e 
-        ON e.co_cpf = v.nu_cpf 
+      INNER JOIN censo.espelho_cnes_nova e
+        ON e.co_cpf = v.nu_cpf
         AND e.co_cnes = v.co_cnes
         AND e.co_cbo = v.co_cbo_ocupacao::text
         AND e.ind_vinculacao = v.nu_vinculacao
@@ -1541,7 +1541,7 @@ app.get('/api/resolucao/stats', async (req, res) => {
     // Competências disponíveis (ordenar DESC para pegar a maior primeiro)
     const competenciasQuery = `
       SELECT DISTINCT nu_comp
-      FROM censo.espelho_cnes
+      FROM censo.espelho_cnes_nova
       ORDER BY nu_comp DESC
     `;
 
@@ -1603,17 +1603,17 @@ app.get('/api/resolucao/agregados', async (req, res) => {
       ? 'INNER JOIN censo.recenseamento_nova r ON v.co_cnes = r.co_cnes' 
       : '';
 
-    const compFilter = competencia ? `AND e.nu_comp = '${competencia}'` : '';
-    const compJoin = competencia ? 
-      `INNER JOIN censo.espelho_cnes e ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}` :
-      `LEFT JOIN censo.espelho_cnes e ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao`;
+    const compFilter = competencia ? `AND e.nu_comp::text = '${competencia}'` : '';
+    const compJoin = competencia ?
+      `INNER JOIN censo.espelho_cnes_nova e ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}` :
+      `LEFT JOIN censo.espelho_cnes_nova e ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao`;
 
     console.log('📊 Executando agregados de resolução...');
     console.log('📊 Competência filtrada:', competencia || 'TODAS');
 
     // Evolução por Competência - SIMPLIFICADA para performance
-    // Limitar às competências até a selecionada (evita varrer todo o espelho_cnes)
-    const compLimitFilter = competencia ? `AND e.nu_comp <= '${competencia}'` : '';
+    // Limitar às competências até a selecionada (evita varrer todo o espelho_cnes_nova)
+    const compLimitFilter = competencia ? `AND e.nu_comp <= ${competencia}` : '';
 
     // CTE reutilizável: espelha EXATAMENTE as 3 queries do /stats
     //   Inclusão resolvida  → INNER JOIN espelho (vínculo existe)
@@ -1622,14 +1622,14 @@ app.get('/api/resolucao/agregados', async (req, res) => {
     const resolvidasCTE = `resolvidas_eq AS (
       SELECT DISTINCT ${CHAVE_V} AS chave
       FROM censo.recenseados_nova v ${recenseamentoJoin}
-      INNER JOIN censo.espelho_cnes e
+      INNER JOIN censo.espelho_cnes_nova e
         ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes
         AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}
       ${whereClause} ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Inclusão'
       UNION ALL
       SELECT DISTINCT ${CHAVE_V} AS chave
       FROM censo.recenseados_nova v ${recenseamentoJoin}
-      LEFT JOIN censo.espelho_cnes e
+      LEFT JOIN censo.espelho_cnes_nova e
         ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes
         AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}
       ${whereClause} ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Exclusão'
@@ -1637,7 +1637,7 @@ app.get('/api/resolucao/agregados', async (req, res) => {
       UNION ALL
       SELECT DISTINCT ${CHAVE_V} AS chave
       FROM censo.recenseados_nova v ${recenseamentoJoin}
-      INNER JOIN censo.espelho_cnes e
+      INNER JOIN censo.espelho_cnes_nova e
         ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes
         AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}
       ${whereClause} ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Alteração'
@@ -1669,13 +1669,13 @@ app.get('/api/resolucao/agregados', async (req, res) => {
         ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Exclusão'
       ),
       competencias_list AS (
-        SELECT DISTINCT nu_comp FROM censo.espelho_cnes
-        ${competencia ? `WHERE nu_comp <= '${competencia}'` : ''}
+        SELECT DISTINCT nu_comp FROM censo.espelho_cnes_nova
+        ${competencia ? `WHERE nu_comp <= ${competencia}` : ''}
         ORDER BY nu_comp
       ),
       inc_alt_por_comp AS (
         SELECT e.nu_comp, COUNT(DISTINCT ${RESOLVIDA_CASE_EVOLUCAO}) AS resolvidas
-        FROM censo.espelho_cnes e
+        FROM censo.espelho_cnes_nova e
         INNER JOIN censo.recenseados_nova v
           ON e.co_cpf = v.nu_cpf
           AND e.co_cnes = v.co_cnes
@@ -1692,7 +1692,7 @@ app.get('/api/resolucao/agregados', async (req, res) => {
         SELECT e.nu_comp, COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) AS n_presente
         FROM censo.recenseados_nova v
         ${recenseamentoJoin}
-        INNER JOIN censo.espelho_cnes e
+        INNER JOIN censo.espelho_cnes_nova e
           ON e.co_cpf = v.nu_cpf
           AND e.co_cnes = v.co_cnes
           AND e.co_cbo = v.co_cbo_ocupacao::text
@@ -1737,7 +1737,7 @@ app.get('/api/resolucao/agregados', async (req, res) => {
     //   Inc + Alt: primeira competência em que aparecem no espelho com condição atendida
     //   Exclusão: total_exclusao − vinculos Exclusão ainda presentes no espelho em cada comp
     //             (uso de MIN() OVER para garantir monotonicidade caso dados não sejam perfeitos)
-    const compLimitClause = competencia ? `WHERE nu_comp <= '${competencia}'` : '';
+    const compLimitClause = competencia ? `WHERE nu_comp <= ${competencia}` : '';
     const evolucaoAcumuladaQuery = `
       WITH
       total_vinculos AS (
@@ -1755,7 +1755,7 @@ app.get('/api/resolucao/agregados', async (req, res) => {
         ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Exclusão'
       ),
       competencias AS (
-        SELECT DISTINCT nu_comp FROM censo.espelho_cnes ${compLimitClause} ORDER BY nu_comp
+        SELECT DISTINCT nu_comp FROM censo.espelho_cnes_nova ${compLimitClause} ORDER BY nu_comp
       ),
       primeira_resolucao AS (
         -- Inc e Alt: primeira competência em que aparecem no espelho com condição atendida
@@ -1764,7 +1764,7 @@ app.get('/api/resolucao/agregados', async (req, res) => {
           MIN(e.nu_comp) AS comp_resolucao
         FROM censo.recenseados_nova v
         ${recenseamentoJoin}
-        INNER JOIN censo.espelho_cnes e
+        INNER JOIN censo.espelho_cnes_nova e
           ON e.co_cpf = v.nu_cpf
           AND e.co_cnes = v.co_cnes
           AND e.co_cbo = v.co_cbo_ocupacao::text
@@ -1788,7 +1788,7 @@ app.get('/api/resolucao/agregados', async (req, res) => {
         SELECT e.nu_comp, COUNT(DISTINCT ${CHAVE_V.replace(/\n/g, ' ')}) AS n_presente
         FROM censo.recenseados_nova v
         ${recenseamentoJoin}
-        INNER JOIN censo.espelho_cnes e
+        INNER JOIN censo.espelho_cnes_nova e
           ON e.co_cpf = v.nu_cpf
           AND e.co_cnes = v.co_cnes
           AND e.co_cbo = v.co_cbo_ocupacao::text
@@ -1955,7 +1955,7 @@ app.get('/api/resolucao/agregados', async (req, res) => {
     // Total de vínculos no CNES por competência (sempre sem filtro — reflete base CNES completa)
     const espelhoPorComp = await pool.query(`
       SELECT nu_comp, COUNT(*) AS total_cnes
-      FROM censo.espelho_cnes
+      FROM censo.espelho_cnes_nova
       GROUP BY nu_comp
       ORDER BY nu_comp
     `);
@@ -2002,11 +2002,11 @@ app.get('/api/resolucao/filtros', async (req, res) => {
     const [competencias, operacoes, cbo, estabelecimentos, uf, macro, regional, municipio, recenseador] = await Promise.all([
       // Competências
       pool.query(`
-        SELECT DISTINCT 
-          nu_comp as codigo, 
-          nu_comp as descricao,
-          nu_comp || ' - ' || 
-          CASE SUBSTRING(nu_comp, 5, 2)
+        SELECT DISTINCT
+          nu_comp::text as codigo,
+          nu_comp::text as descricao,
+          nu_comp::text || ' - ' ||
+          CASE SUBSTRING(nu_comp::text, 5, 2)
             WHEN '01' THEN 'Jan'
             WHEN '02' THEN 'Fev'
             WHEN '03' THEN 'Mar'
@@ -2019,8 +2019,8 @@ app.get('/api/resolucao/filtros', async (req, res) => {
             WHEN '10' THEN 'Out'
             WHEN '11' THEN 'Nov'
             WHEN '12' THEN 'Dez'
-          END || '/' || SUBSTRING(nu_comp, 1, 4) as valor
-        FROM censo.espelho_cnes
+          END || '/' || SUBSTRING(nu_comp::text, 1, 4) as valor
+        FROM censo.espelho_cnes_nova
         ORDER BY nu_comp DESC
       `),
       
@@ -2172,8 +2172,8 @@ app.get('/api/resolucao/tabela', async (req, res) => {
         END as status
       FROM censo.recenseados_nova v
       LEFT JOIN censo.recenseamento_nova r ON v.co_cnes = r.co_cnes
-      LEFT JOIN censo.espelho_cnes e 
-        ON e.co_cpf = v.nu_cpf 
+      LEFT JOIN censo.espelho_cnes_nova e
+        ON e.co_cpf = v.nu_cpf
         AND e.co_cnes = v.co_cnes
         AND e.co_cbo = v.co_cbo_ocupacao::text
         AND e.ind_vinculacao = v.nu_vinculacao
