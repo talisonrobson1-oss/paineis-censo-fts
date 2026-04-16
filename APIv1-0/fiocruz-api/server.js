@@ -2021,7 +2021,7 @@ app.get('/api/resolucao/filtros', async (req, res) => {
             WHEN '12' THEN 'Dez'
           END || '/' || SUBSTRING(nu_comp::text, 1, 4) as valor
         FROM censo.espelho_cnes_nova
-        ORDER BY nu_comp DESC
+        ORDER BY nu_comp::text DESC
       `),
       
       // Tipos de Operação
