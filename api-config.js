@@ -44,6 +44,7 @@ const API_CONFIG = {
     RESOLUCAO_AGREGADOS: '/api/resolucao/agregados',
     RESOLUCAO_FILTROS: '/api/resolucao/filtros',
     RESOLUCAO_TABELA: '/api/resolucao/tabela',
+    RESOLUCAO_ESTABS_PENDENTES: '/api/resolucao/estabelecimentos-pendentes',
     
     // Sistema
     HEALTH: '/health'

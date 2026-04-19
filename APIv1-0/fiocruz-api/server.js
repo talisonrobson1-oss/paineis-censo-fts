@@ -834,9 +834,12 @@ app.get('/api/vinculos/agregados', async (req, res) => {
       return params.length > 0 ? pool.query(query, params) : pool.query(query);
     };
     
-    console.log('📊 Executando LOTE 1 (4 queries)...');
-    // LOTE 1: Queries principais (4 queries)
-    const [operacao, operacaoCnes, sexo, raca] = await Promise.all([
+    console.log('📊 Executando todos os agregados em paralelo...');
+    // Todas as queries em paralelo (única rodada)
+    const [operacao, operacaoCnes, sexo, raca,
+      identidadeGenero, escolaridade, cine, cbo,
+      vinculacao, cargaHoraria, expectativa, estrategia
+    ] = await Promise.all([
       // Tipo de Operação (SEM incluir não alterados quando há filtros)
       executeQuery(`
         SELECT 
@@ -891,17 +894,8 @@ app.get('/api/vinculos/agregados', async (req, res) => {
             THEN 'Sem informação'
             ELSE ds_raca_cor
           END
-      `)
-    ]);
-    
-    console.log('✅ LOTE 1 concluído');
-    
-    // Pequeno delay para não sobrecarregar pool
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    console.log('📊 Executando LOTE 2 (4 queries)...');
-    // LOTE 2: Queries secundárias (4 queries)
-    const [identidadeGenero, escolaridade, cine, cbo] = await Promise.all([
+      `),
+
       // Identidade de Gênero
       executeQuery(`
         SELECT ds_identidade_genero as identidade, COUNT(*) as n
@@ -936,17 +930,8 @@ app.get('/api/vinculos/agregados', async (req, res) => {
         GROUP BY ds_cbo_ocupacao
         ORDER BY n DESC
         LIMIT 20
-      `)
-    ]);
-    
-    console.log('✅ LOTE 2 concluído');
-    
-    // Pequeno delay para não sobrecarregar pool
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    console.log('📊 Executando LOTE 3 (4 queries)...');
-    // LOTE 3: Queries finais (4 queries)
-    const [vinculacao, cargaHoraria, expectativa, estrategia] = await Promise.all([
+      `),
+
       // Tipo de Vinculação - Top 15
       executeQuery(`
         SELECT vinculacao, COUNT(*) as n
@@ -1038,8 +1023,7 @@ app.get('/api/vinculos/agregados', async (req, res) => {
       })()
     ]);
 
-    console.log('✅ LOTE 3 concluído');
-    console.log('✅ Todas as queries de agregados concluídas com sucesso');
+    console.log('✅ Todos os agregados concluídos em paralelo');
 
     res.json({
       operacao: operacao.rows,
@@ -1261,45 +1245,63 @@ app.get('/api/vinculos/filtros', async (req, res) => {
 /**
  * GET /api/vinculos/nao-alterados
  * Retorna análise de vínculos não alterados pelo projeto (comparação com espelho CNES)
- * Usa competência mais antiga: Agosto/2025 (202508)
+ * Usa a menor competência disponível em censo.espelho_cnes_nova dinamicamente.
  */
 app.get('/api/vinculos/nao-alterados', async (req, res) => {
   try {
-    const competencia = '202508'; // Agosto/2025 - competência mais antiga
-    
-    // Total de vínculos no espelho CNES (Ago/2025)
-    const totalQuery = `
-      SELECT COUNT(*) as total
-      FROM censo.espelho_cnes_nova
-      WHERE nu_comp::text = $1
-    `;
-    const totalResult = await pool.query(totalQuery, [competencia]);
-    const totalEspelho = parseInt(totalResult.rows[0].total);
-    
-    // Vínculos alterados pelo projeto (que existem no recenseamento)
-    const alteradosQuery = `
-      SELECT COUNT(DISTINCT e.co_cpf || '|' || e.co_cnes) as alterados
-      FROM censo.espelho_cnes_nova e
-      INNER JOIN censo.recenseados_nova v
-        ON e.co_cpf = v.nu_cpf
-        AND e.co_cnes = v.co_cnes
-      WHERE e.nu_comp::text = $1
-    `;
-    const alteradosResult = await pool.query(alteradosQuery, [competencia]);
-    const alterados = parseInt(alteradosResult.rows[0].alterados);
-    
-    const naoAlterados = totalEspelho - alterados;
-    const cobertura = totalEspelho > 0 ? ((alterados / totalEspelho) * 100).toFixed(1) : 0;
-    
+    // CTE único: min_comp + total_espelho + total_recenseados + nao_alterados (1 round-trip)
+    const { rows } = await pool.query(`
+      WITH
+      min_comp_cte AS (
+        SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova
+      ),
+      espelho_min AS (
+        SELECT e.*
+        FROM censo.espelho_cnes_nova e
+        WHERE e.nu_comp = (SELECT nu_comp FROM min_comp_cte)
+      ),
+      nao_alt_cte AS (
+        SELECT COUNT(*) AS n
+        FROM espelho_min e
+        WHERE NOT EXISTS (
+          SELECT 1 FROM censo.recenseados_nova v
+          WHERE v.nu_cpf                = e.co_cpf
+            AND v.co_cnes               = e.co_cnes
+            AND v.nu_vinculacao::text   = e.ind_vinculacao::text
+            AND v.co_cbo_ocupacao::text = e.co_cbo::text
+            AND COALESCE(v.qt_carga_horaria_ambulatorial::numeric, 0) = COALESCE(e.qt_carga_horaria_ambulatorial::numeric, 0)
+            AND COALESCE(v.qt_carga_horaria_hospitalar::numeric, 0)   = COALESCE(e.qt_carga_hor_hosp_sus::numeric, 0)
+            AND COALESCE(v.qt_carga_horaria_outros::numeric, 0)       = COALESCE(e.qt_carga_horaria_outros::numeric, 0)
+        )
+      ),
+      total_rec AS (SELECT COUNT(*) AS n FROM censo.recenseados_nova)
+      SELECT
+        (SELECT nu_comp FROM min_comp_cte) AS nu_comp,
+        (SELECT COUNT(*) FROM espelho_min) AS total_espelho,
+        (SELECT n FROM total_rec)          AS total_vinculos_recenseados,
+        (SELECT n FROM nao_alt_cte)        AS nao_alterados
+    `);
+
+    const compStr  = String(rows[0].nu_comp);
+    const mesesNome = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    const labelComp = `${mesesNome[parseInt(compStr.slice(4,6)) - 1]}/${compStr.slice(0,4)}`;
+
+    const totalEspelho             = parseInt(rows[0].total_espelho);
+    const totalVinculosRecenseados = parseInt(rows[0].total_vinculos_recenseados);
+    const naoAlterados             = parseInt(rows[0].nao_alterados);
+    const alterados                = totalEspelho - naoAlterados;
+    const cobertura                = totalEspelho > 0 ? ((alterados / totalEspelho) * 100).toFixed(1) : '0';
+
     res.json({
-      competencia: competencia,
-      label: 'Ago/2025',
+      competencia: compStr,
+      label: labelComp,
       total_espelho: totalEspelho,
+      total_vinculos_recenseados: totalVinculosRecenseados,
       alterados: alterados,
       nao_alterados: naoAlterados,
       cobertura: parseFloat(cobertura)
     });
-    
+
   } catch (err) {
     console.error('Erro em /api/vinculos/nao-alterados:', err);
     res.status(500).json({ error: 'Erro ao buscar vínculos não alterados', details: err.message });
@@ -1400,6 +1402,20 @@ function buildResolucaoWhere(filters) {
     console.log(`  ✓ Filtro Estabelecimento aplicado: ${filters.estabelecimento}`);
   }
 
+  // Filtro: Período de Conclusão do Censo (coluna coletado_em em recenseamento_nova)
+  if (filters.periodo_inicio) {
+    conditions.push(`r.coletado_em::date >= $${paramIndex}`);
+    params.push(filters.periodo_inicio);
+    paramIndex++;
+    console.log(`  ✓ Filtro Período início: ${filters.periodo_inicio}`);
+  }
+  if (filters.periodo_fim) {
+    conditions.push(`r.coletado_em::date <= $${paramIndex}`);
+    params.push(filters.periodo_fim);
+    paramIndex++;
+    console.log(`  ✓ Filtro Período fim: ${filters.periodo_fim}`);
+  }
+
   const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
   
   console.log('📝 WHERE gerado:', whereClause);
@@ -1456,22 +1472,27 @@ app.get('/api/resolucao/stats', async (req, res) => {
     console.log('📊 Competência recebida:', competencia || 'TODAS');
     console.log('📊 Query params:', req.query);
 
-    // Se competência específica
-    const compFilter = competencia ? `AND e.nu_comp = '${competencia}'` : '';
-    
+    // Se competência específica; sem filtro → usa a competência mais recente para evitar
+    // que o JOIN varra todas as competências do espelho simultaneamente (timeout)
+    const compFilter = competencia
+      ? `AND e.nu_comp = '${competencia}'`
+      : `AND e.nu_comp = (SELECT MAX(nu_comp) FROM censo.espelho_cnes_nova)`;
+
     // Verificar se há filtros que exigem JOIN com recenseamento
     const needsRecenseamentoJoin = !!(
-      req.query.uf || 
-      req.query.macro || 
-      req.query.regional || 
-      req.query.municipio || 
+      req.query.uf ||
+      req.query.macro ||
+      req.query.regional ||
+      req.query.municipio ||
       req.query.recenseador ||
-      req.query.estabelecimento  // estabelecimento também precisa de r.no_razao_social
+      req.query.estabelecimento ||
+      req.query.periodo_inicio ||
+      req.query.periodo_fim
     );
-    
+
     // JOIN com recenseamento (apenas se necessário)
-    const recenseamentoJoin = needsRecenseamentoJoin 
-      ? 'INNER JOIN censo.recenseamento_nova r ON v.co_cnes = r.co_cnes' 
+    const recenseamentoJoin = needsRecenseamentoJoin
+      ? 'INNER JOIN censo.recenseamento_nova r ON v.co_cnes = r.co_cnes'
       : '';
 
     // Total de divergências (TODOS os vínculos únicos - chave de 7 campos)
@@ -1545,31 +1566,77 @@ app.get('/api/resolucao/stats', async (req, res) => {
       ORDER BY nu_comp DESC
     `;
 
-    // Executar sequencialmente para não sobrecarregar o banco remoto com rajada de conexões
-    const totalDiv      = params.length > 0 ? await pool.query(totalDivQuery, params)             : await pool.query(totalDivQuery);
-    const resolvidasInc = params.length > 0 ? await pool.query(resolvidasInclusaoQuery, params)   : await pool.query(resolvidasInclusaoQuery);
-    const resolvidasExc = params.length > 0 ? await pool.query(resolvidasExclusaoQuery, params)   : await pool.query(resolvidasExclusaoQuery);
-    const resolvidasAlt = params.length > 0 ? await pool.query(resolvidasAlteracaoQuery, params)  : await pool.query(resolvidasAlteracaoQuery);
-    const competencias  = await pool.query(competenciasQuery);
+    // Query principal unificada: uma única varredura em recenseados_nova calcula
+    // total de divergências, resolvidas e métricas por estabelecimento
+    const mainStatsQuery = `
+      WITH resolucao_por_estab AS (
+        SELECT
+          v.co_cnes,
+          COUNT(DISTINCT ${CHAVE_V})          AS total,
+          COUNT(DISTINCT ${RESOLVIDA_CASE_V}) AS resolvidas
+        FROM censo.recenseados_nova v
+        ${recenseamentoJoin}
+        LEFT JOIN censo.espelho_cnes_nova e
+          ON e.co_cpf          = v.nu_cpf
+          AND e.co_cnes         = v.co_cnes
+          AND e.co_cbo          = v.co_cbo_ocupacao::text
+          AND e.ind_vinculacao  = v.nu_vinculacao
+          ${compFilter}
+        ${whereClause}
+        ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
+        GROUP BY v.co_cnes
+      )
+      SELECT
+        COALESCE(SUM(total),     0)::bigint                                 AS total_divergencias,
+        COALESCE(SUM(resolvidas),0)::bigint                                 AS divergencias_resolvidas,
+        COUNT(*) FILTER (WHERE resolvidas  = total)::bigint                 AS estabs_com_resolucao,
+        COUNT(*) FILTER (WHERE resolvidas  < total)::bigint                 AS estabs_com_pendencias
+      FROM resolucao_por_estab
+    `;
 
-    const total = parseInt(totalDiv.rows[0].total);
-    const totalResolvidas = parseInt(resolvidasInc.rows[0].resolvidas || 0) + 
-                           parseInt(resolvidasExc.rows[0].resolvidas || 0) + 
-                           parseInt(resolvidasAlt.rows[0].resolvidas || 0);
-    const pendentes = total - totalResolvidas;
+    // Query de total de estabelecimentos recenseados (concluídos)
+    const totalEstabsRecenseadosQuery = whereClause
+      ? `SELECT COUNT(DISTINCT r.co_cnes) AS n
+         FROM censo.recenseamento_nova r
+         WHERE r.situacao_recenseamento = 'Concluído'
+           AND r.co_cnes IN (
+             SELECT DISTINCT v.co_cnes FROM censo.recenseados_nova v
+             INNER JOIN censo.recenseamento_nova r2 ON r2.co_cnes = v.co_cnes
+             ${whereClause}
+           )`
+      : `SELECT COUNT(*) AS n FROM censo.recenseamento_nova WHERE situacao_recenseamento = 'Concluído'`;
+
+    // Executar em paralelo: query principal + competências + estabs recenseados
+    const [mainRow, competencias, totalEstabsRes] = await Promise.all([
+      params.length > 0 ? pool.query(mainStatsQuery, params) : pool.query(mainStatsQuery),
+      pool.query(competenciasQuery),
+      params.length > 0 ? pool.query(totalEstabsRecenseadosQuery, params) : pool.query(totalEstabsRecenseadosQuery)
+    ]);
+
+    const total               = parseInt(mainRow.rows[0].total_divergencias);
+    const totalResolvidas     = parseInt(mainRow.rows[0].divergencias_resolvidas);
+    const estabsComResolucao  = parseInt(mainRow.rows[0].estabs_com_resolucao  || 0);
+    const estabsComPendencias = parseInt(mainRow.rows[0].estabs_com_pendencias || 0);
+    const totalEstabsRecenseados = parseInt(totalEstabsRes.rows[0].n || 0);
+
+    const pendentes     = total - totalResolvidas;
     const taxaResolucao = total > 0 ? ((totalResolvidas / total) * 100).toFixed(1) : 0;
+    // Estabs sem divergência = Total Recenseados − Com Resolução − Com Pendência
+    const estabsSemDivergencia = Math.max(0, totalEstabsRecenseados - estabsComResolucao - estabsComPendencias);
 
     console.log('📊 Stats calculados:');
-    console.log('  Total divergências:', total);
-    console.log('  Resolvidas:', totalResolvidas);
-    console.log('  Pendentes:', pendentes);
-    console.log('  Taxa:', taxaResolucao + '%');
+    console.log('  Total divergências:', total, '| Resolvidas:', totalResolvidas, '| Pendentes:', pendentes);
+    console.log('  Estabs: recenseados', totalEstabsRecenseados, '| resolvidos', estabsComResolucao, '| pendentes', estabsComPendencias, '| sem divergência', estabsSemDivergencia);
 
     res.json({
       total_divergencias: total,
       divergencias_resolvidas: totalResolvidas,
       divergencias_pendentes: pendentes,
       taxa_resolucao: parseFloat(taxaResolucao),
+      estabs_com_resolucao: estabsComResolucao,
+      estabs_com_pendencias: estabsComPendencias,
+      estabs_sem_divergencia: estabsSemDivergencia,
+      total_estabs_recenseados: totalEstabsRecenseados,
       competencias: competencias.rows.map(r => r.nu_comp)
     });
 
@@ -1590,23 +1657,26 @@ app.get('/api/resolucao/agregados', async (req, res) => {
 
     // Verificar se há filtros que exigem JOIN com recenseamento
     const needsRecenseamentoJoin = !!(
-      req.query.uf || 
-      req.query.macro || 
-      req.query.regional || 
-      req.query.municipio || 
+      req.query.uf ||
+      req.query.macro ||
+      req.query.regional ||
+      req.query.municipio ||
       req.query.recenseador ||
-      req.query.estabelecimento
+      req.query.estabelecimento ||
+      req.query.periodo_inicio ||
+      req.query.periodo_fim
     );
-    
+
     // JOIN com recenseamento (apenas se necessário)
-    const recenseamentoJoin = needsRecenseamentoJoin 
-      ? 'INNER JOIN censo.recenseamento_nova r ON v.co_cnes = r.co_cnes' 
+    const recenseamentoJoin = needsRecenseamentoJoin
+      ? 'INNER JOIN censo.recenseamento_nova r ON v.co_cnes = r.co_cnes'
       : '';
 
-    const compFilter = competencia ? `AND e.nu_comp::text = '${competencia}'` : '';
-    const compJoin = competencia ?
-      `INNER JOIN censo.espelho_cnes_nova e ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}` :
-      `LEFT JOIN censo.espelho_cnes_nova e ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao`;
+    // Sem competência → usa a mais recente para não varrer todas as competências do espelho
+    const compFilter = competencia
+      ? `AND e.nu_comp::text = '${competencia}'`
+      : `AND e.nu_comp = (SELECT MAX(nu_comp) FROM censo.espelho_cnes_nova)`;
+    const compJoin = `LEFT JOIN censo.espelho_cnes_nova e ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}`;
 
     console.log('📊 Executando agregados de resolução...');
     console.log('📊 Competência filtrada:', competencia || 'TODAS');
@@ -2148,7 +2218,10 @@ app.get('/api/resolucao/tabela', async (req, res) => {
       params.push(buscaParam);
     }
 
-    const compFilter = competencia ? `AND e.nu_comp = '${competencia}'` : '';
+    // Sem competência → usa a mais recente para não varrer todas as competências do espelho
+    const compFilter = competencia
+      ? `AND e.nu_comp = '${competencia}'`
+      : `AND e.nu_comp = (SELECT MAX(nu_comp) FROM censo.espelho_cnes_nova)`;
 
     console.log('📋 Tabela Resolução - Competência:', competencia || 'TODAS');
     console.log('📋 Tabela Resolução - WHERE:', whereClause);
@@ -2211,6 +2284,95 @@ app.get('/api/resolucao/tabela', async (req, res) => {
   } catch (err) {
     console.error('Erro em /api/resolucao/tabela:', err);
     res.status(500).json({ error: 'Erro ao buscar tabela', details: err.message });
+  }
+});
+
+/**
+ * GET /api/resolucao/estabelecimentos-pendentes
+ * Lista de estabelecimentos com divergências pendentes (não resolvidas)
+ */
+app.get('/api/resolucao/estabelecimentos-pendentes', async (req, res) => {
+  try {
+    const { whereClause, params } = buildResolucaoWhere(req.query);
+    const competencia = req.query.comp || req.query.competencia || null;
+    // Sem competência → usa a mais recente para não varrer todas as competências do espelho
+    const compFilter  = competencia
+      ? `AND e.nu_comp::text = '${competencia}'`
+      : `AND e.nu_comp = (SELECT MAX(nu_comp) FROM censo.espelho_cnes_nova)`;
+
+    // Sempre faz JOIN com recenseamento (precisamos de nome, UF, município)
+    const recJoin = 'INNER JOIN censo.recenseamento_nova r ON v.co_cnes = r.co_cnes';
+
+    const resolvidasCTE = `resolvidas_eq AS (
+      SELECT DISTINCT ${CHAVE_V} AS chave
+      FROM censo.recenseados_nova v ${recJoin}
+      INNER JOIN censo.espelho_cnes_nova e
+        ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes
+        AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}
+      ${whereClause} ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Inclusão'
+      UNION ALL
+      SELECT DISTINCT ${CHAVE_V} AS chave
+      FROM censo.recenseados_nova v ${recJoin}
+      LEFT JOIN censo.espelho_cnes_nova e
+        ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes
+        AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}
+      ${whereClause} ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Exclusão'
+        AND e.co_cpf IS NULL
+      UNION ALL
+      SELECT DISTINCT ${CHAVE_V} AS chave
+      FROM censo.recenseados_nova v ${recJoin}
+      INNER JOIN censo.espelho_cnes_nova e
+        ON e.co_cpf = v.nu_cpf AND e.co_cnes = v.co_cnes
+        AND e.co_cbo = v.co_cbo_ocupacao::text AND e.ind_vinculacao = v.nu_vinculacao ${compFilter}
+      ${whereClause} ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo = 'Alteração'
+        AND (
+          COALESCE(v.qt_carga_horaria_ambulatorial::numeric, 0) != COALESCE(e.qt_carga_horaria_ambulatorial::numeric, 0)
+          OR COALESCE(v.qt_carga_horaria_hospitalar::numeric, 0) != COALESCE(e.qt_carga_hor_hosp_sus::numeric, 0)
+          OR COALESCE(v.qt_carga_horaria_outros::numeric, 0) != COALESCE(e.qt_carga_horaria_outros::numeric, 0)
+        )
+    )`;
+
+    const sql = `
+      WITH ${resolvidasCTE}
+      SELECT
+        v.co_cnes,
+        MAX(r.no_razao_social)                                            AS no_razao_social,
+        MAX(r.sg_uf)                                                      AS sg_uf,
+        MAX(r.no_municipio)                                               AS no_municipio,
+        COUNT(DISTINCT ${CHAVE_V})                                        AS total,
+        COUNT(DISTINCT rv.chave)                                          AS resolvidas,
+        COUNT(DISTINCT ${CHAVE_V}) - COUNT(DISTINCT rv.chave)            AS pendentes
+      FROM censo.recenseados_nova v
+      ${recJoin}
+      LEFT JOIN resolvidas_eq rv ON rv.chave = ${CHAVE_V}
+      ${whereClause}
+      ${whereClause ? 'AND' : 'WHERE'} v.no_tipo_operacao_censo IS NOT NULL
+      GROUP BY v.co_cnes
+      HAVING COUNT(DISTINCT ${CHAVE_V}) - COUNT(DISTINCT rv.chave) > 0
+      ORDER BY pendentes DESC, total DESC
+      LIMIT 500
+    `;
+
+    const result = params.length > 0
+      ? await pool.query(sql, params)
+      : await pool.query(sql);
+
+    res.json({
+      data: result.rows.map(r => ({
+        co_cnes:        r.co_cnes,
+        no_razao_social: r.no_razao_social || '—',
+        sg_uf:          r.sg_uf || '—',
+        no_municipio:   r.no_municipio || '—',
+        total:          parseInt(r.total),
+        resolvidas:     parseInt(r.resolvidas),
+        pendentes:      parseInt(r.pendentes)
+      })),
+      total: result.rows.length
+    });
+
+  } catch (err) {
+    console.error('Erro em /api/resolucao/estabelecimentos-pendentes:', err);
+    res.status(500).json({ error: 'Erro ao buscar estabelecimentos pendentes', details: err.message });
   }
 });
 

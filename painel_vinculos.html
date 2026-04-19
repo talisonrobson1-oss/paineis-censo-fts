@@ -520,20 +520,25 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
   <div class="sec-label">Vínculos Não Alterados pelo Projeto</div>
   <div class="na-section">
     <div style="font-size:12px;color:var(--muted);margin-bottom:16px;">
-      Comparação com a competência <strong style="color:var(--text)">Agosto/2025</strong> do espelho CNES. Vínculos que não foram alterados pelo projeto de recenseamento.
+      Comparação com a competência <strong style="color:var(--text)" id="na-comp-label">—</strong> do espelho CNES. Vínculos que não foram alterados pelo projeto de recenseamento.
     </div>
     
-    <!-- KPI Principal em Destaque -->
-    <div style="margin-bottom:20px;">
-      <div class="kpi" style="--ca:var(--blue);font-size:18px;padding:24px;box-shadow:0 4px 12px rgba(0,0,0,0.08);">
-        <div class="kpi-lbl" style="font-size:14px;font-weight:600;">Total no Espelho (Ago/2025)</div>
-        <div class="kpi-val" id="na-total" style="font-size:42px;margin:8px 0;">—</div>
-        <div class="kpi-sub" style="font-size:13px;">vínculos registrados no CNES</div>
+    <!-- Linha 1: 2 KPIs em destaque -->
+    <div class="na-kpi-row" style="grid-template-columns:repeat(2,1fr);margin-bottom:16px;">
+      <div class="kpi" style="--ca:var(--blue);padding:24px;">
+        <div class="kpi-lbl" style="font-size:14px;font-weight:600;">Total no Espelho</div>
+        <div class="kpi-val" id="na-total" style="font-size:38px;margin:8px 0;">—</div>
+        <div class="kpi-sub">vínculos registrados no CNES</div>
+      </div>
+      <div class="kpi" style="--ca:var(--blue);padding:24px;">
+        <div class="kpi-lbl" style="font-size:14px;font-weight:600;">Total de Vínculos Recenseados</div>
+        <div class="kpi-val" id="na-recenseados" style="font-size:38px;margin:8px 0;">—</div>
+        <div class="kpi-sub">em recenseados_nova</div>
       </div>
     </div>
-    
-    <!-- KPIs Secundários -->
-    <div class="na-kpi-row" style="grid-template-columns:repeat(3,1fr);">
+
+    <!-- Linha 2: 2 KPIs secundários -->
+    <div class="na-kpi-row" style="grid-template-columns:repeat(2,1fr);margin-bottom:16px;">
       <div class="kpi" style="--ca:var(--green)">
         <div class="kpi-lbl">Alterados pelo Projeto</div>
         <div class="kpi-val" id="na-alterados">—</div>
@@ -543,11 +548,6 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
         <div class="kpi-lbl">Não Alterados</div>
         <div class="kpi-val" id="na-naoalt">—</div>
         <div class="kpi-sub" id="na-naoalt-sub"></div>
-      </div>
-      <div class="kpi" style="--ca:var(--purple)">
-        <div class="kpi-lbl">Cobertura do Projeto</div>
-        <div class="kpi-val" id="na-cobertura">—</div>
-        <div class="kpi-sub">da base do CNES</div>
       </div>
     </div>
     
@@ -1665,9 +1665,13 @@ function updateNaoAlteradosKPIs() {
 
   const fmt = n => (n || 0).toLocaleString('pt-BR');
 
-  // "Alterados pelo Projeto" = Total de Vínculos dos Indicadores Gerais
-  const alterados    = D.stats?.total_vinculos || data.alterados;
-  const naoAlterados = Math.max(0, data.total_espelho - alterados);
+  // Atualizar label dinâmico da competência
+  const labelEl = document.getElementById('na-comp-label');
+  if (labelEl && data.label) labelEl.textContent = data.label;
+
+  // Usar nao_alterados diretamente da API (comparação pelos 7 campos)
+  const naoAlterados = data.nao_alterados;
+  const alterados    = data.alterados;
   const cobertura    = data.total_espelho > 0
     ? ((alterados / data.total_espelho) * 100).toFixed(1)
     : '0.0';
@@ -1676,16 +1680,16 @@ function updateNaoAlteradosKPIs() {
   // KPI Principal: Total no Espelho
   set('na-total', fmt(data.total_espelho));
 
-  // KPI 2: Alterados pelo Projeto (= Total de Vínculos dos Indicadores Gerais)
+  // KPI extra: Total de Vínculos Recenseados
+  set('na-recenseados', fmt(data.total_vinculos_recenseados || 0));
+
+  // KPI 2: Alterados pelo Projeto
   set('na-alterados', fmt(alterados));
   set('na-alterados-sub', `${cobertura}% do total`);
 
   // KPI 3: Não Alterados
   set('na-naoalt', fmt(naoAlterados));
   set('na-naoalt-sub', `${pctNaoAlt}% do total`);
-
-  // KPI 4: Cobertura
-  set('na-cobertura', `${cobertura}%`);
 
   console.log('✅ KPIs Não Alterados atualizados');
 }
@@ -1694,10 +1698,9 @@ function renderNaoAlteradosChart() {
   if (!D || !D.naoAlterados) return;
 
   const data = D.naoAlterados;
-
-  // Reutilizar o mesmo cálculo dos KPIs: Alterados = Total de Vínculos dos Indicadores Gerais
-  const alterados    = D.stats?.total_vinculos || data.alterados;
-  const naoAlterados = Math.max(0, data.total_espelho - alterados);
+  const totalRecenseados = data.total_vinculos_recenseados || 0;
+  const alterados        = data.alterados;
+  const naoAlterados     = data.nao_alterados;
 
   destroyChart('na-bars');
   const ctx = document.getElementById('c-na-bars');
@@ -1706,28 +1709,51 @@ function renderNaoAlteradosChart() {
   CH['na-bars'] = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: ['Total no Espelho', 'Alterados pelo Projeto', 'Não Alterados'],
-      datasets: [{
-        data: [data.total_espelho, alterados, naoAlterados],
-        backgroundColor: ['#4a90e2', '#3fb950', '#d29922'],
-        borderWidth: 0,
-        borderRadius: 4
-      }]
+      labels: ['Total no Espelho', 'Vínculos Recenseados'],
+      datasets: [
+        {
+          label: 'Alterados pelo Projeto',
+          data: [alterados, null],
+          backgroundColor: '#3fb950',
+          stack: 'espelho',
+          borderWidth: 0,
+          borderRadius: 0
+        },
+        {
+          label: 'Não Alterados',
+          data: [naoAlterados, null],
+          backgroundColor: '#d29922',
+          stack: 'espelho',
+          borderWidth: 0,
+          borderRadius: 4
+        },
+        {
+          label: 'Vínculos Recenseados',
+          data: [null, totalRecenseados],
+          backgroundColor: '#6c8ebf',
+          stack: 'recenseados',
+          borderWidth: 0,
+          borderRadius: 4
+        }
+      ]
     },
     options: {
       indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { display: false },
+        legend: {
+          display: true,
+          position: 'bottom',
+          labels: { color: '#7a9ab8', font: { size: 12 }, padding: 16 }
+        },
         tooltip: {
           callbacks: {
             label: (ctx) => {
-              const value = ctx.parsed.x.toLocaleString('pt-BR');
-              const pct = data.total_espelho > 0
-                ? ((ctx.parsed.x / data.total_espelho) * 100).toFixed(1)
-                : '0.0';
-              return `${value} vínculos (${pct}%)`;
+              const value = (ctx.parsed.x || 0).toLocaleString('pt-BR');
+              const base = data.total_espelho > 0 ? data.total_espelho : 1;
+              const pct = ((( ctx.parsed.x || 0) / base) * 100).toFixed(1);
+              return ` ${ctx.dataset.label}: ${value} (${pct}%)`;
             }
           }
         }
@@ -1735,10 +1761,12 @@ function renderNaoAlteradosChart() {
       scales: {
         x: {
           beginAtZero: true,
+          stacked: true,
           ticks: { color: '#7a9ab8', callback: v => v.toLocaleString('pt-BR') },
           grid: { color: '#2a4270' }
         },
         y: {
+          stacked: true,
           ticks: { color: '#7a9ab8' },
           grid: { display: false }
         }

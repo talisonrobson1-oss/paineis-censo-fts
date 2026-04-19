@@ -251,6 +251,21 @@ tr:hover{background:var(--surface2);}
     </div>
   </div>
 
+  <!-- Filtro Período de Conclusão do Censo -->
+  <div class="filter-section">
+    <div class="filter-section-title">Período de Conclusão do Censo</div>
+    <div class="filter-section-content">
+      <div class="fg">
+        <label>De</label>
+        <input type="date" id="f-periodo-inicio" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;width:100%;" oninput="onPeriodoChange()">
+      </div>
+      <div class="fg">
+        <label>Até</label>
+        <input type="date" id="f-periodo-fim" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;width:100%;" oninput="onPeriodoChange()">
+      </div>
+    </div>
+  </div>
+
   <!-- Filtros Geográficos -->
   <div class="filter-section">
     <div class="filter-section-title">Localização</div>
@@ -316,7 +331,8 @@ tr:hover{background:var(--surface2);}
 <main>
   <!-- KPIs -->
   <div class="sec-label">Indicadores Principais</div>
-  <div class="kpi-grid">
+  <!-- Linha 1: indicadores de vínculos -->
+  <div class="kpi-grid" style="margin-bottom:12px">
     <div class="kpi" style="--ca:var(--blue)">
       <div class="kpi-lbl">Total de Divergências</div>
       <div class="kpi-val" id="kpi-total">—</div>
@@ -336,6 +352,29 @@ tr:hover{background:var(--surface2);}
       <div class="kpi-lbl">Taxa de Resolução</div>
       <div class="kpi-val" id="kpi-taxa">—</div>
       <div class="kpi-sub">vínculos resolvidos</div>
+    </div>
+  </div>
+  <!-- Linha 2: indicadores de estabelecimentos -->
+  <div class="kpi-grid">
+    <div class="kpi" style="--ca:var(--blue)">
+      <div class="kpi-lbl">Total de Estab. Recenseados</div>
+      <div class="kpi-val" id="kpi-estabs-total">—</div>
+      <div class="kpi-sub">situação = Concluído</div>
+    </div>
+    <div class="kpi" style="--ca:var(--muted)">
+      <div class="kpi-lbl">Estab. sem Divergência</div>
+      <div class="kpi-val" id="kpi-estabs-sem-divergencia">—</div>
+      <div class="kpi-sub">sem divergências registradas</div>
+    </div>
+    <div class="kpi" style="--ca:var(--green)">
+      <div class="kpi-lbl">Estab. com Divergências Resolvidas</div>
+      <div class="kpi-val" id="kpi-estabs-resolvidos">—</div>
+      <div class="kpi-sub">todas as divergências resolvidas</div>
+    </div>
+    <div class="kpi" style="--ca:var(--red)">
+      <div class="kpi-lbl">Estab. com Divergências Pendentes</div>
+      <div class="kpi-val" id="kpi-estabs-pendentes">—</div>
+      <div class="kpi-sub">ao menos 1 divergência pendente</div>
     </div>
   </div>
 
@@ -408,6 +447,34 @@ tr:hover{background:var(--surface2);}
       </div>
     </div>
   </div>
+
+  <!-- Estabelecimentos Pendentes -->
+  <div class="sec-label" style="margin-top:32px">Estabelecimentos com Divergências Pendentes</div>
+  <div class="tbl-wrap" id="estabs-pendentes-wrap">
+    <div class="tbl-hdr">
+      <h3>Estabelecimentos <span id="estabs-pend-count" style="color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;margin-left:8px"></span></h3>
+      <button class="btn-export" onclick="exportEstabsPendentes()" title="Exportar CSV">↓ CSV</button>
+    </div>
+    <div class="tbl-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>CNES</th>
+            <th>Estabelecimento</th>
+            <th>UF</th>
+            <th>Município</th>
+            <th>Total Diverg.</th>
+            <th>Resolvidas</th>
+            <th>Pendentes</th>
+            <th>% Resolvido</th>
+          </tr>
+        </thead>
+        <tbody id="estabs-pend-body">
+          <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px">Carregando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </main>
 
 <script>
@@ -434,8 +501,11 @@ const activeFilters = {
   regiao_adm_df: '',
   cbo: '',
   estabelecimento: '',
-  recenseador: ''
+  recenseador: '',
+  periodo_inicio: '',
+  periodo_fim: ''
 };
+let _estabsPendentesData = [];
 // Dados DF para routing de filtros
 let _filtrosDFRes = null;
 
@@ -456,17 +526,31 @@ function toggleFiltersRes() {
 
 function updateResFilterBadge() {
   const ids = ['f-comp','f-op','f-uf','f-macro','f-regional','f-municipio','f-cbo','f-estabelecimento','f-recenseador'];
-  // Contar filtros ativos via activeFilters (inclui DF keys que não têm IDs próprios)
   const dfCount = (activeFilters.regiao_saude_df ? 1 : 0) + (activeFilters.regiao_adm_df ? 1 : 0);
+  const periodoCount = (activeFilters.periodo_inicio ? 1 : 0) + (activeFilters.periodo_fim ? 1 : 0);
   const count = ids.filter(id => {
     const el = document.getElementById(id);
     return el && el.value && el.value !== '';
-  }).length + dfCount;
+  }).length + dfCount + periodoCount;
   const badge = document.getElementById('res-filter-badge');
   if (badge) {
     badge.textContent = count;
     badge.style.display = count > 0 ? 'inline-block' : 'none';
   }
+}
+
+// Debounce para o filtro de período (inputs de data)
+let _periodoDebounce = null;
+function onPeriodoChange() {
+  activeFilters.periodo_inicio = document.getElementById('f-periodo-inicio').value || '';
+  activeFilters.periodo_fim    = document.getElementById('f-periodo-fim').value    || '';
+  updateResFilterBadge();
+  clearTimeout(_periodoDebounce);
+  _periodoDebounce = setTimeout(async () => {
+    await reloadWithFilters();
+    await loadTableData(1);
+    await loadEstabsPendentes();
+  }, 600);
 }
 
 // ==========================================
@@ -676,23 +760,23 @@ async function loadDataFromAPI() {
         // Recarregar com essa competência
         await reloadWithFilters();
         await loadTableData(1);
+        await loadEstabsPendentes();
       }, 300);
+    } else {
+      // Nenhuma competência disponível — carregar tabela imediatamente
+      await loadTableData(1);
+      await loadEstabsPendentes();
     }
-    
+
     // Atualizar header
     const totalComp = D.competencias.length;
     document.getElementById('hdr-meta').innerHTML =
       `Base: Abril/2025<br>` +
       `Competências de comparação: ${totalComp}<br>` +
       `Período: ${D.competencias[0]} a ${D.competencias[totalComp-1]}`;
-    
-    showLoading('Carregando tabela...');
-    
-    // Carregar primeira página da tabela
-    await loadTableData(1);
-    
+
     hideLoading();
-    
+
     // Inicializar painel
     initializePainel();
     
@@ -1064,11 +1148,14 @@ async function reloadWithFilters() {
     console.log('🎨 Atualizando KPIs e gráficos...');
     updateKPIs();
     renderCharts();
-    
+
+    // Atualizar listagem de estabelecimentos pendentes (sem bloquear)
+    loadEstabsPendentes();
+
     hideLoading();
-    
+
     console.log('✅ Dados atualizados com filtros!');
-    
+
   } catch (error) {
     console.error('❌ Erro ao aplicar filtros:', error);
     hideLoading();
@@ -1092,6 +1179,12 @@ function resetFilters() {
     }
   });
 
+  // Limpar datas
+  const pi = document.getElementById('f-periodo-inicio');
+  const pf = document.getElementById('f-periodo-fim');
+  if (pi) pi.value = '';
+  if (pf) pf.value = '';
+
   // Repopular filtros cascata sem UF
   if (_lastFiltrosRes) populateFilters(_lastFiltrosRes, '');
   const searchEl = document.getElementById('tbl-search');
@@ -1100,6 +1193,7 @@ function resetFilters() {
   updateResFilterBadge();
   reloadWithFilters();
   loadTableData(1);
+  loadEstabsPendentes();
 }
 
 // ==========================================
@@ -1107,18 +1201,28 @@ function resetFilters() {
 // ==========================================
 function updateKPIs() {
   if (!D.stats) return;
-  
+
   const fmt = n => (n || 0).toLocaleString('pt-BR');
-  
+
   document.getElementById('kpi-total').textContent = fmt(D.stats.total_divergencias);
   document.getElementById('kpi-resolvidas').textContent = fmt(D.stats.divergencias_resolvidas);
   document.getElementById('kpi-resolvidas-sub').textContent = `${D.stats.taxa_resolucao}% do total`;
   document.getElementById('kpi-pendentes').textContent = fmt(D.stats.divergencias_pendentes);
-  
+
   const pctPendentes = (100 - D.stats.taxa_resolucao).toFixed(1);
   document.getElementById('kpi-pendentes-sub').textContent = `${pctPendentes}% do total`;
   document.getElementById('kpi-taxa').textContent = `${D.stats.taxa_resolucao}%`;
-  
+
+  // KPIs de estabelecimentos
+  const elEstabsTotal    = document.getElementById('kpi-estabs-total');
+  const elSemDiv         = document.getElementById('kpi-estabs-sem-divergencia');
+  const elResolvidos     = document.getElementById('kpi-estabs-resolvidos');
+  const elPendentes      = document.getElementById('kpi-estabs-pendentes');
+  if (elEstabsTotal) elEstabsTotal.textContent = fmt(D.stats.total_estabs_recenseados);
+  if (elSemDiv)      elSemDiv.textContent      = fmt(D.stats.estabs_sem_divergencia);
+  if (elResolvidos)  elResolvidos.textContent  = fmt(D.stats.estabs_com_resolucao);
+  if (elPendentes)   elPendentes.textContent   = fmt(D.stats.estabs_com_pendencias);
+
   console.log('✅ KPIs atualizados');
 }
 
@@ -1660,6 +1764,76 @@ function srt(col) {
   });
   
   renderTable();
+}
+
+// ==========================================
+// ESTABELECIMENTOS PENDENTES
+// ==========================================
+async function loadEstabsPendentes() {
+  try {
+    const filters = { ...activeFilters };
+    const res = await apiRequest(API_CONFIG.ENDPOINTS.RESOLUCAO_ESTABS_PENDENTES, filters);
+    if (res.success) {
+      _estabsPendentesData = res.data.data || [];
+      renderEstabsPendentes(_estabsPendentesData);
+    } else {
+      console.warn('Erro ao carregar estabelecimentos pendentes:', res.error);
+      renderEstabsPendentesErro();
+    }
+  } catch (e) {
+    console.error('Falha loadEstabsPendentes:', e);
+    renderEstabsPendentesErro();
+  }
+}
+
+function renderEstabsPendentes(dados) {
+  const tbody = document.getElementById('estabs-pend-body');
+  const count = document.getElementById('estabs-pend-count');
+  if (!tbody) return;
+
+  if (count) count.textContent = `(${dados.length} estabelecimentos)`;
+
+  if (!dados.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--green);padding:24px">Nenhum estabelecimento com divergências pendentes 🎉</td></tr>';
+    return;
+  }
+
+  const fmt = n => (n || 0).toLocaleString('pt-BR');
+  const pct = (r, t) => t > 0 ? ((r / t) * 100).toFixed(1) + '%' : '0%';
+
+  tbody.innerHTML = dados.map(r => {
+    const taxaColor = r.resolvidas / r.total >= 0.5 ? 'var(--yellow)' : 'var(--red)';
+    return `<tr>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${r.co_cnes}</td>
+      <td>${r.no_razao_social}</td>
+      <td>${r.sg_uf}</td>
+      <td>${r.no_municipio}</td>
+      <td style="text-align:right">${fmt(r.total)}</td>
+      <td style="text-align:right;color:var(--green)">${fmt(r.resolvidas)}</td>
+      <td style="text-align:right;color:var(--red)">${fmt(r.pendentes)}</td>
+      <td style="text-align:right;color:${taxaColor}">${pct(r.resolvidas, r.total)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderEstabsPendentesErro() {
+  const tbody = document.getElementById('estabs-pend-body');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--red);padding:24px">Erro ao carregar estabelecimentos</td></tr>';
+}
+
+function exportEstabsPendentes() {
+  if (!_estabsPendentesData.length) return;
+  const header = ['CNES', 'Estabelecimento', 'UF', 'Município', 'Total', 'Resolvidas', 'Pendentes', '% Resolvido'];
+  const rows = _estabsPendentesData.map(r => [
+    r.co_cnes, r.no_razao_social, r.sg_uf, r.no_municipio,
+    r.total, r.resolvidas, r.pendentes,
+    r.total > 0 ? ((r.resolvidas / r.total) * 100).toFixed(1) + '%' : '0%'
+  ]);
+  const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'estabs_pendentes.csv'; a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ==========================================
