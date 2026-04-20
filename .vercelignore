@@ -1,4 +1,5 @@
-APIv1-0/fiocruz-api/node_modules
-APIv1-0/fiocruz-api/.env
+APIv1-0/
 *.log
 .claude/
+tmp_filtros.json
+tmp_pdf/
