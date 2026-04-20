@@ -1,13 +1,3 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "**/*.html",
-      "use": "@vercel/static"
-    },
-    {
-      "src": "**/*.{js,css,png,jpg,jpeg,gif,svg,ico,pdf}",
-      "use": "@vercel/static"
-    }
-  ]
+  "version": 2
 }
