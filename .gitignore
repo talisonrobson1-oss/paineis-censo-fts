@@ -25,3 +25,21 @@ desktop.ini
 dist/
 build/
 *.tmp
+
+.vercel
+
+# Claude Code — sessões locais
+.claude/
+
+# Arquivos temporários do projeto
+tmp_filtros.json
+tmp_pdf/
+null
+server.log
+server.err
+
+# Documentos e executáveis locais
+*.pdf
+*.pptx
+*.exe
+gerar_manual.js

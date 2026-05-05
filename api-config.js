@@ -97,7 +97,16 @@ const ENDPOINT_TIMEOUTS = {
 };
 
 async function apiRequest(endpoint, params = {}) {
-  const queryString = new URLSearchParams(params).toString();
+  // Suporte a arrays: cada elemento vira um param separado (uf=DF&uf=MS)
+  const queryParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      value.forEach(v => { if (v !== null && v !== undefined && v !== '') queryParams.append(key, v); });
+    } else if (value !== null && value !== undefined && value !== '') {
+      queryParams.append(key, value);
+    }
+  });
+  const queryString = queryParams.toString();
   const url = `${API_CONFIG.BASE_URL}${endpoint}${queryString ? '?' + queryString : ''}`;
   const timeout = ENDPOINT_TIMEOUTS[endpoint] || API_CONFIG.TIMEOUT;
 

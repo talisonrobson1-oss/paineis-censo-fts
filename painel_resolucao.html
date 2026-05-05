@@ -156,6 +156,55 @@ select:focus,input.finput:focus{border-color:var(--blue);}
   background-color: var(--surface);
 }
 
+/* SELECT2 — tema escuro para MÚLTIPLA SELEÇÃO (tags/chips) */
+.select2-container--default .select2-selection--multiple {
+  background-color: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 6px !important;
+  min-height: 36px;
+  padding: 2px 4px;
+}
+.select2-container--default.select2-container--focus .select2-selection--multiple {
+  border-color: var(--purple) !important;
+  outline: none;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice {
+  background-color: var(--purple) !important;
+  border: none !important;
+  border-radius: 4px !important;
+  color: #fff !important;
+  padding: 1px 6px 1px 4px !important;
+  margin: 3px 3px !important;
+  font-size: 11.5px;
+  line-height: 18px;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice__display {
+  color: #fff !important;
+  padding-left: 2px;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+  color: rgba(255,255,255,0.75) !important;
+  border: none !important;
+  background: transparent !important;
+  font-size: 13px;
+  margin-right: 2px;
+  cursor: pointer;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+  color: #fff !important;
+  background: rgba(255,255,255,0.15) !important;
+  border-radius: 3px;
+}
+.select2-container--default .select2-selection--multiple .select2-search__field {
+  background: transparent !important;
+  color: var(--text) !important;
+  margin-top: 4px;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__placeholder {
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
 /* MAIN */
 main{padding:24px 32px;max-width:1600px;margin:0 auto;}
 .sec-label{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
@@ -526,12 +575,11 @@ function toggleFiltersRes() {
 
 function updateResFilterBadge() {
   const ids = ['f-comp','f-op','f-uf','f-macro','f-regional','f-municipio','f-cbo','f-estabelecimento','f-recenseador'];
-  const dfCount = (activeFilters.regiao_saude_df ? 1 : 0) + (activeFilters.regiao_adm_df ? 1 : 0);
+  const hasVals = id => { const v = $('#' + id).val(); return v ? (Array.isArray(v) ? v.filter(x => x !== '').length > 0 : v !== '') : false; };
+  const dfCount = ((activeFilters.regiao_saude_df || []).length > 0 ? 1 : 0) +
+                  ((activeFilters.regiao_adm_df   || []).length > 0 ? 1 : 0);
   const periodoCount = (activeFilters.periodo_inicio ? 1 : 0) + (activeFilters.periodo_fim ? 1 : 0);
-  const count = ids.filter(id => {
-    const el = document.getElementById(id);
-    return el && el.value && el.value !== '';
-  }).length + dfCount + periodoCount;
+  const count = ids.filter(id => hasVals(id)).length + dfCount + periodoCount;
   const badge = document.getElementById('res-filter-badge');
   if (badge) {
     badge.textContent = count;
@@ -957,12 +1005,23 @@ function populateSelectMergedRes(id, standardItems, dfItems, selectedUF) {
 
 function initSelect2SingleRes($sel) {
   $sel.select2({
+    multiple: true,
+    closeOnSelect: false,
     placeholder: 'Selecione...',
     allowClear: true,
     width: '100%',
     language: {
       noResults: () => 'Nenhum resultado encontrado',
       searching: () => 'Buscando...'
+    },
+    // Oculta a opção vazia ("Todas"/"Todos") do dropdown e das tags selecionadas
+    templateResult: function(data) {
+      if (!data.id) return null;
+      return data.text;
+    },
+    templateSelection: function(data) {
+      if (!data.id) return $('<span>');
+      return data.text;
     }
   });
 }
@@ -978,23 +1037,26 @@ function initializeSelect2() {
 
       // UF cascade
       if (id === 'f-uf') {
-        $select.off('select2:select select2:clear').on('select2:select select2:clear', async function() {
-          const ufVal = $(this).val() || '';
-          activeFilters.uf = ufVal;
+        $select.off('select2:select select2:unselect select2:clear')
+               .on('select2:select select2:unselect select2:clear', async function() {
+          const rawUf = $(this).val();
+          const ufVals = rawUf ? (Array.isArray(rawUf) ? rawUf : [rawUf]) : [];
+          activeFilters.uf = ufVals;
           // Limpar dependentes
           ['f-macro', 'f-regional', 'f-municipio'].forEach(depId => {
             const $d = $('#' + depId);
-            if ($d.data('select2')) $d.val('').trigger('change.select2');
+            if ($d.data('select2')) $d.val(null).trigger('change.select2');
           });
-          activeFilters.macro = '';
-          activeFilters.regional = '';
-          activeFilters.municipio = '';
-          activeFilters.regiao_saude_df = '';
-          activeFilters.regiao_adm_df = '';
-          // Repopular com UF selecionada e restaurar valor de UF após reinicialização do Select2
+          activeFilters.macro = [];
+          activeFilters.regional = [];
+          activeFilters.municipio = [];
+          activeFilters.regiao_saude_df = [];
+          activeFilters.regiao_adm_df = [];
+          // Repopular com primeira UF selecionada
+          const ufSel = ufVals[0] || '';
           if (_lastFiltrosRes) {
-            populateFilters(_lastFiltrosRes, ufVal);
-            if (ufVal) setTimeout(() => $('#f-uf').val(ufVal).trigger('change.select2'), 50);
+            populateFilters(_lastFiltrosRes, ufSel);
+            if (ufVals.length) setTimeout(() => $('#f-uf').val(ufVals).trigger('change.select2'), 50);
           }
           updateResFilterBadge();
           if (filterDebounce) clearTimeout(filterDebounce);
@@ -1019,34 +1081,26 @@ function initializePainel() {
   ['f-comp', 'f-op', 'f-macro', 'f-regional', 'f-municipio', 'f-cbo', 'f-estabelecimento', 'f-recenseador'].forEach(id => {
     const $elem = $('#' + id);
     if ($elem.length) {
-      $elem.on('select2:select select2:clear change', function() {
-        const value = $(this).val() || '';
+      $elem.on('select2:select select2:unselect select2:clear change', function() {
+        const rawVal = $(this).val();
+        // Filtrar valor vazio (opção "Todas"/"Todos") — o placeholder é gerenciado pelo Select2
+        const vals = (rawVal ? (Array.isArray(rawVal) ? rawVal : [rawVal]) : []).filter(v => v !== '');
 
         // Routing DF para regional e municipio
         if (id === 'f-regional') {
           const dfRegioesSaude = _filtrosDFRes ? (_filtrosDFRes.regioes_saude_df || []) : [];
-          if (dfRegioesSaude.includes(value)) {
-            activeFilters.regiao_saude_df = value;
-            activeFilters.regional = '';
-          } else {
-            activeFilters.regional = value;
-            activeFilters.regiao_saude_df = '';
-          }
+          activeFilters.regiao_saude_df = vals.filter(v => dfRegioesSaude.includes(v));
+          activeFilters.regional        = vals.filter(v => !dfRegioesSaude.includes(v));
         } else if (id === 'f-municipio') {
           const dfRegioesAdm = _filtrosDFRes ? (_filtrosDFRes.regioes_adm_df || []) : [];
-          if (dfRegioesAdm.includes(value)) {
-            activeFilters.regiao_adm_df = value;
-            activeFilters.municipio = '';
-          } else {
-            activeFilters.municipio = value;
-            activeFilters.regiao_adm_df = '';
-          }
+          activeFilters.regiao_adm_df = vals.filter(v => dfRegioesAdm.includes(v));
+          activeFilters.municipio     = vals.filter(v => !dfRegioesAdm.includes(v));
         } else {
-          activeFilters[id.replace('f-', '')] = value;
+          activeFilters[id.replace('f-', '')] = vals;
         }
         updateResFilterBadge();
 
-        console.log(`🔄 Filtro ${id} alterado para: ${value}`);
+        console.log(`🔄 Filtro ${id} alterado para:`, vals);
 
         // Debounce: aguarda 400ms após última alteração antes de disparar requisição
         if (filterDebounce) clearTimeout(filterDebounce);

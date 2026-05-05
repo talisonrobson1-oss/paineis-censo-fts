@@ -327,6 +327,55 @@
   .select2-results { background-color: var(--surface); }
   .select2-results__options { background-color: var(--surface); }
 
+  /* SELECT2 — tema escuro para MÚLTIPLA SELEÇÃO (tags/chips) */
+  .select2-container--default .select2-selection--multiple {
+    background-color: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 6px !important;
+    min-height: 36px;
+    padding: 2px 4px;
+  }
+  .select2-container--default.select2-container--focus .select2-selection--multiple {
+    border-color: var(--accent) !important;
+    outline: none;
+  }
+  .select2-container--default .select2-selection--multiple .select2-selection__choice {
+    background-color: var(--accent) !important;
+    border: none !important;
+    border-radius: 4px !important;
+    color: #fff !important;
+    padding: 1px 6px 1px 4px !important;
+    margin: 3px 3px !important;
+    font-size: 11.5px;
+    line-height: 18px;
+  }
+  .select2-container--default .select2-selection--multiple .select2-selection__choice__display {
+    color: #fff !important;
+    padding-left: 2px;
+  }
+  .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+    color: rgba(255,255,255,0.75) !important;
+    border: none !important;
+    background: transparent !important;
+    font-size: 13px;
+    margin-right: 2px;
+    cursor: pointer;
+  }
+  .select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+    color: #fff !important;
+    background: rgba(255,255,255,0.15) !important;
+    border-radius: 3px;
+  }
+  .select2-container--default .select2-selection--multiple .select2-search__field {
+    background: transparent !important;
+    color: var(--text) !important;
+    margin-top: 4px;
+  }
+  .select2-container--default .select2-selection--multiple .select2-selection__placeholder {
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
   /* MAIN */
   main {
     padding: 24px 32px;
@@ -901,11 +950,12 @@
       <table>
         <thead>
           <tr>
+            <th onclick="sortTable('SG_UF')">UF ↕</th>
+            <th onclick="sortTable('NO_MACRORREGIONAL')">Macrorregião ↕</th>
+            <th onclick="sortTable('NO_REGIONAL_SAUDE')">Região ↕</th>
+            <th onclick="sortTable('NO_MUNICIPIO')">Município ↕</th>
             <th onclick="sortTable('CO_CNES')">CNES ↕</th>
             <th onclick="sortTable('NO_FANTASIA')">Nome Fantasia ↕</th>
-            <th onclick="sortTable('SG_UF')">UF ↕</th>
-            <th onclick="sortTable('NO_MUNICIPIO')">Município ↕</th>
-            <th onclick="sortTable('NO_REGIONAL_SAUDE')">Regional ↕</th>
             <th onclick="sortTable('ESFERA')">Esfera ↕</th>
             <th>SUS</th>
             <th onclick="sortTable('TOTAL_VINCULOS')">Vínculos ↕</th>
@@ -1208,12 +1258,23 @@ function populateFilters(selectedUF) {
 // ==========================================
 function initSelect2Single($sel) {
   $sel.select2({
+    multiple: true,
+    closeOnSelect: false,
     placeholder: 'Selecione...',
     allowClear: true,
     width: '100%',
     language: {
       noResults: () => 'Nenhum resultado encontrado',
       searching: () => 'Buscando...'
+    },
+    // Oculta a opção vazia ("Todas"/"Todos") do dropdown e das tags selecionadas
+    templateResult: function(data) {
+      if (!data.id) return null;
+      return data.text;
+    },
+    templateSelection: function(data) {
+      if (!data.id) return $('<span>');  // elemento vazio — não exibe a tag "Todas"
+      return data.text;
     }
   });
 }
@@ -1231,9 +1292,10 @@ function initializeSelect2() {
       if ($select.data('select2')) $select.select2('destroy');
       initSelect2Single($select);
 
-      // Evento Select2
-      $select.off('select2:select select2:clear').on('select2:select select2:clear', async function() {
-        const val = $(this).val() || '';
+      // Evento Select2 (select, unselect e clear)
+      $select.off('select2:select select2:unselect select2:clear')
+             .on('select2:select select2:unselect select2:clear', async function() {
+        const val = $(this).val();
         console.log(`🔄 Filtro ${id} alterado para:`, val);
 
         // Cascata: UF filtra Macro/Regional/Município
@@ -1241,16 +1303,18 @@ function initializeSelect2() {
           // Limpar selects dependentes
           ['f-macro', 'f-regional', 'f-municipio'].forEach(depId => {
             const $dep = $('#' + depId);
-            if ($dep.data('select2')) $dep.val('').trigger('change.select2');
+            if ($dep.data('select2')) $dep.val(null).trigger('change.select2');
           });
-          // Repopular com UF selecionada
-          populateFilters(val);
+          // Repopular com primeira UF selecionada (ou '' para todas)
+          const ufSel = Array.isArray(val) ? (val[0] || '') : (val || '');
+          populateFilters(ufSel);
           // Re-inicializar Select2 nos dependentes
           ['f-macro', 'f-regional', 'f-municipio'].forEach(depId => {
             const $dep = $('#' + depId);
             if ($dep.data('select2')) $dep.select2('destroy');
             initSelect2Single($dep);
-            $dep.off('select2:select select2:clear').on('select2:select select2:clear', async function() {
+            $dep.off('select2:select select2:unselect select2:clear')
+                .on('select2:select select2:unselect select2:clear', async function() {
               await reloadWithFilters();
             });
           });
@@ -1280,35 +1344,52 @@ async function reloadWithFilters() {
   try {
     showLoading('Aplicando filtros...');
     
-    // Coletar valores dos filtros (compatível com Select2 e native)
-    const gv = id => ($('#' + id).val() || '');
-    // Detectar se o valor selecionado em f-regional / f-municipio é DF ou padrão CNES
-    const regionalVal  = gv('f-regional');
-    const municipioVal = gv('f-municipio');
-    const dfRegioesSaude = (D.filtrosDF && D.filtrosDF.regioes_saude_df) || [];
-    const dfRegioesAdm   = (D.filtrosDF && D.filtrosDF.regioes_adm_df)   || [];
-    const isDFRegional = dfRegioesSaude.includes(regionalVal);
-    const isDFMunicipio = dfRegioesAdm.includes(municipioVal);
+    // Coletar valores dos filtros — Select2 multiple retorna array ou null
+    // gvArr: coleta array de valores, filtrando valores vazios (opção "Todas"/"Todos")
+    const gvArr = id => { const v = $('#' + id).val(); return (v && v.length) ? (Array.isArray(v) ? v : [v]).filter(x => x !== '') : []; };
+
+    const regionalVals  = gvArr('f-regional');
+    const municipioVals = gvArr('f-municipio');
+
+    // Separar valores de "Classificação DF" dos valores "Padrão CNES" pelo optgroup
+    const isOptgroupDF = (selectId, val) =>
+      $('#' + selectId + ' option[value="' + val.replace(/"/g, '\\"') + '"]')
+        .closest('optgroup').attr('label') === 'Classificação DF';
+
+    const dfRegionais   = regionalVals.filter(v => isOptgroupDF('f-regional',  v));
+    const stdRegionais  = regionalVals.filter(v => !isOptgroupDF('f-regional', v));
+    const dfMunicipios  = municipioVals.filter(v => isOptgroupDF('f-municipio',  v));
+    const stdMunicipios = municipioVals.filter(v => !isOptgroupDF('f-municipio', v));
+
+    // "Padrão CNES: DISTRITO FEDERAL" → excluir CNES já classificados (mostrar os ~824 sem classificação)
+    const ufVals = gvArr('f-uf');
+    const isPadraoCNES_DF = stdRegionais.length > 0 &&
+      (ufVals.includes('DF') || stdRegionais.some(v => v.toUpperCase() === 'DISTRITO FEDERAL'));
 
     const filters = {
-      uf:              gv('f-uf'),
-      macrorregiao:    gv('f-macro'),
-      regional:        isDFRegional  ? '' : regionalVal,   // padrão CNES
-      municipio:       isDFMunicipio ? '' : municipioVal,  // padrão CNES
-      situacao:        gv('f-situacao'),
-      recenseador:     gv('f-recenseador'),
-      estrategia:      gv('f-estrategia'),
-      sus:             gv('f-sus'),
-      esfera:          gv('f-esfera'),
-      tp_unidade:      gv('f-tp-unidade'),
-      regiao_saude_df: isDFRegional  ? regionalVal  : '', // classificação DF
-      regiao_adm_df:   isDFMunicipio ? municipioVal : ''  // classificação DF
+      uf:                      ufVals,
+      macrorregiao:            gvArr('f-macro'),
+      regional:                stdRegionais,   // padrão CNES
+      municipio:               stdMunicipios,  // padrão CNES
+      situacao:                gvArr('f-situacao'),
+      recenseador:             gvArr('f-recenseador'),
+      estrategia:              gvArr('f-estrategia'),
+      sus:                     gvArr('f-sus'),
+      esfera:                  gvArr('f-esfera'),
+      tp_unidade:              gvArr('f-tp-unidade'),
+      regiao_saude_df:         dfRegionais,    // classificação DF
+      regiao_adm_df:           dfMunicipios,   // classificação DF
+      excluir_classificacao_df: isPadraoCNES_DF ? '1' : ''
     };
-    
-    // Construir query string
+
+    // Construir query string — arrays viram parâmetros repetidos (uf=DF&uf=MS)
     const queryParams = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => {
-      if (value) queryParams.append(key, value);
+      if (Array.isArray(value)) {
+        value.forEach(v => { if (v) queryParams.append(key, v); });
+      } else if (value) {
+        queryParams.append(key, value);
+      }
     });
     
     const queryString = queryParams.toString();
@@ -1807,11 +1888,12 @@ async function loadTableData(page = 1, filters = {}) {
       };
       tbody.innerHTML = data.map(row => `
         <tr>
+          <td>${row.sg_uf || '—'}</td>
+          <td>${row.no_macrorregional || '—'}</td>
+          <td>${row.no_regional_saude || '—'}</td>
+          <td>${row.no_municipio || '—'}</td>
           <td>${row.co_cnes || '—'}</td>
           <td>${row.no_fantasia || '—'}</td>
-          <td>${row.sg_uf || '—'}</td>
-          <td>${row.no_municipio || '—'}</td>
-          <td>${row.no_regional_saude || '—'}</td>
           <td>${row.esfera || '—'}</td>
           <td>${row.vinculado_sus === 'S' ? 'Sim' : row.vinculado_sus === 'N' ? 'Não' : '—'}</td>
           <td>${row.total_vinculos != null ? parseInt(row.total_vinculos).toLocaleString('pt-BR') : '—'}</td>
@@ -1920,7 +2002,7 @@ async function resetFilters() {
   allIds.forEach(id => {
     const $el = $('#' + id);
     if ($el.data('select2')) {
-      $el.val('').trigger('change.select2');
+      $el.val(null).trigger('change.select2'); // null limpa multiple selects
     } else if ($el.length) {
       $el.val('');
     }

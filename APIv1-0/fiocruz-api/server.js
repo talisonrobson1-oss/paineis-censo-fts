@@ -137,75 +137,87 @@ pool.query('SELECT NOW()', (err, res) => {
 });
 
 /**
- * Helper: Construir WHERE clause a partir de filtros
+ * Helper: normalizar parâmetro de query como array de strings não-vazias.
+ * Aceita string simples, array de strings, ou valor falsy → retorna array.
+ */
+function normalizeArr(val) {
+  if (!val) return [];
+  if (Array.isArray(val)) return val.filter(Boolean);
+  return [val];
+}
+
+/**
+ * Helper: adicionar condição de igualdade (simples ou ANY para arrays).
+ */
+function addEqFilter(conditions, params, paramCount, column, val) {
+  const vals = normalizeArr(val);
+  if (vals.length === 0) return paramCount;
+  if (vals.length === 1) {
+    conditions.push(`${column} = $${paramCount}`);
+    params.push(vals[0]);
+  } else {
+    conditions.push(`${column} = ANY($${paramCount})`);
+    params.push(vals);
+  }
+  return paramCount + 1;
+}
+
+/**
+ * Helper: Construir WHERE clause a partir de filtros (suporta multi-seleção)
  */
 function buildEstabelecimentosWhere(query, additionalConditions = []) {
-  const { uf, macrorregiao, regional, municipio, situacao, recenseador, sus, esfera, estrategia, tp_unidade, regiao_saude_df, regiao_adm_df } = query;
   const conditions = [...additionalConditions];
   const params = [];
-  let paramCount = 1;
+  let p = 1;
 
-  if (uf) {
-    conditions.push(`sg_uf = $${paramCount++}`);
-    params.push(uf);
-  }
-  if (macrorregiao) {
-    conditions.push(`no_macrorregional = $${paramCount++}`);
-    params.push(macrorregiao);
-  }
-  if (regional) {
-    conditions.push(`no_regional_saude = $${paramCount++}`);
-    params.push(regional);
-  }
-  if (municipio) {
-    conditions.push(`no_municipio = $${paramCount++}`);
-    params.push(municipio);
-  }
-  if (situacao) {
-    conditions.push(`situacao_recenseamento = $${paramCount++}`);
-    params.push(situacao);
-  }
-  if (recenseador) {
-    conditions.push(`recenseador = $${paramCount++}`);
-    params.push(recenseador);
-  }
-  if (estrategia) {
-    conditions.push(`estrategia = $${paramCount++}`);
-    params.push(estrategia);
-  }
-  if (sus) {
-    conditions.push(`vinculado_sus = $${paramCount++}`);
-    params.push(sus);
-  }
-  if (esfera) {
-    conditions.push(`esfera = $${paramCount++}`);
-    params.push(esfera);
-  }
-  if (tp_unidade) {
-    conditions.push(`tp_unidade = $${paramCount++}`);
-    params.push(tp_unidade);
-  }
+  p = addEqFilter(conditions, params, p, 'sg_uf',                    query.uf);
+  p = addEqFilter(conditions, params, p, 'no_macrorregional',         query.macrorregiao);
+  p = addEqFilter(conditions, params, p, 'no_regional_saude',         query.regional);
+  p = addEqFilter(conditions, params, p, 'no_municipio',              query.municipio);
+  p = addEqFilter(conditions, params, p, 'situacao_recenseamento',    query.situacao);
+  p = addEqFilter(conditions, params, p, 'recenseador',               query.recenseador);
+  p = addEqFilter(conditions, params, p, 'estrategia',                query.estrategia);
+  p = addEqFilter(conditions, params, p, 'vinculado_sus',             query.sus);
+  p = addEqFilter(conditions, params, p, 'esfera',                    query.esfera);
+  p = addEqFilter(conditions, params, p, 'tp_unidade',                query.tp_unidade);
 
-  // Filtros de Regionalização DF (lookup em memória → filtra por lista de CNES)
-  if (regiao_saude_df) {
-    const cnesList = dfRegionSaudeMap[regiao_saude_df] || [];
-    if (cnesList.length > 0) {
-      conditions.push(`co_cnes::text = ANY($${paramCount++})`);
-      params.push(cnesList);
+  // Filtros de Regionalização DF — agrega CNES de todas as regiões selecionadas
+  const regioesDF = normalizeArr(query.regiao_saude_df);
+  if (regioesDF.length > 0) {
+    const allCnes = [];
+    regioesDF.forEach(r => allCnes.push(...(dfRegionSaudeMap[r] || [])));
+    const uniqueCnes = [...new Set(allCnes)];
+    if (uniqueCnes.length > 0) {
+      conditions.push(`co_cnes::text = ANY($${p++})`);
+      params.push(uniqueCnes);
     }
   }
-  if (regiao_adm_df) {
-    const cnesList = dfRegionAdmMap[regiao_adm_df] || [];
-    if (cnesList.length > 0) {
-      conditions.push(`co_cnes::text = ANY($${paramCount++})`);
-      params.push(cnesList);
+  const regioesAdmDF = normalizeArr(query.regiao_adm_df);
+  if (regioesAdmDF.length > 0) {
+    const allCnes = [];
+    regioesAdmDF.forEach(r => allCnes.push(...(dfRegionAdmMap[r] || [])));
+    const uniqueCnes = [...new Set(allCnes)];
+    if (uniqueCnes.length > 0) {
+      conditions.push(`co_cnes::text = ANY($${p++})`);
+      params.push(uniqueCnes);
+    }
+  }
+
+  // Excluir CNES já classificados nas regiões DF (Padrão CNES "Distrito Federal" → apenas os ~824 sem classificação)
+  if (query.excluir_classificacao_df === '1') {
+    const allClassifiedCnes = [];
+    Object.values(dfRegionSaudeMap).forEach(arr => allClassifiedCnes.push(...arr));
+    const uniqueCnes = [...new Set(allClassifiedCnes)];
+    if (uniqueCnes.length > 0) {
+      conditions.push(`co_cnes::text != ALL($${p++})`);
+      params.push(uniqueCnes);
     }
   }
 
   return {
     whereClause: conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '',
     params,
-    paramCount
+    paramCount: p
   };
 }
 
@@ -518,8 +530,9 @@ app.get('/api/estabelecimentos/lista', async (req, res) => {
         co_cnes,
         no_fantasia,
         sg_uf,
-        no_municipio,
+        no_macrorregional,
         no_regional_saude,
+        no_municipio,
         esfera,
         vinculado_sus,
         total_vinculos,
@@ -649,118 +662,162 @@ app.get('/api/estabelecimentos/filtros-df', (req, res) => {
  * Helper: Construir WHERE clause para vínculos
  */
 function buildVinculosWhere(query, additionalConditions = []) {
-  const { cbo, vinculo, estabelecimento, sexo, escolaridade, raca, cine, operacao,
-          uf, macro, regional, municipio, regiao_saude_df, regiao_adm_df } = query;
   const conditions = [...additionalConditions];
   const params = [];
   let paramCount = 1;
 
   console.log('🔍 buildVinculosWhere recebeu:', query);
 
-  // ---- Localização (subquery em recenseamento_nova) ----
-  if (uf) {
-    conditions.push(`co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE sg_uf = $${paramCount++})`);
-    params.push(uf);
-    console.log('  ✓ Filtro UF aplicado:', uf);
-  }
-  if (macro) {
-    conditions.push(`co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE no_macrorregional = $${paramCount++})`);
-    params.push(macro);
-    console.log('  ✓ Filtro Macro aplicado:', macro);
-  }
-  if (regional) {
-    conditions.push(`co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE no_regional_saude = $${paramCount++})`);
-    params.push(regional);
-    console.log('  ✓ Filtro Regional aplicado:', regional);
-  }
-  if (municipio) {
-    conditions.push(`co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE no_municipio = $${paramCount++})`);
-    params.push(municipio);
-    console.log('  ✓ Filtro Município aplicado:', municipio);
-  }
-  if (regiao_saude_df && dfRegionSaudeMap[regiao_saude_df]) {
-    const cnesList = dfRegionSaudeMap[regiao_saude_df].map(String);
-    conditions.push(`co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE co_cnes::text = ANY($${paramCount++}))`);
-    params.push(cnesList);
-    console.log('  ✓ Filtro Região de Saúde DF aplicado:', regiao_saude_df);
-  }
-  if (regiao_adm_df && dfRegionAdmMap[regiao_adm_df]) {
-    const cnesList = dfRegionAdmMap[regiao_adm_df].map(String);
-    conditions.push(`co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE co_cnes::text = ANY($${paramCount++}))`);
-    params.push(cnesList);
-    console.log('  ✓ Filtro Região Administrativa DF aplicado:', regiao_adm_df);
-  }
-  
-  // CBO: buscar por código OU descrição (formato: "código - descrição")
-  // co_cbo_ocupacao é int4 na nova tabela — cast para text para aceitar comparação com param string
-  if (cbo) {
-    conditions.push(`(co_cbo_ocupacao::text = $${paramCount} OR ds_cbo_ocupacao = $${paramCount})`);
-    params.push(cbo);
-    paramCount++;
-    console.log('  ✓ Filtro CBO aplicado:', cbo);
-  }
-  
-  // Vínculo: buscar por código OU descrição (formato: "código - descrição")
-  if (vinculo) {
-    conditions.push(`(nu_vinculacao = $${paramCount} OR vinculacao = $${paramCount})`);
-    params.push(vinculo);
-    paramCount++;
-    console.log('  ✓ Filtro Vínculo aplicado:', vinculo);
-  }
-  
-  // Estabelecimento: código CNES
-  if (estabelecimento) {
-    conditions.push(`co_cnes = $${paramCount++}`);
-    params.push(estabelecimento);
-    console.log('  ✓ Filtro Estabelecimento aplicado:', estabelecimento);
-  }
-  
-  // Sexo: M/1 = Masculino, F/2 = Feminino
-  if (sexo) {
-    if (sexo === 'M' || sexo === 'Masculino') {
-      conditions.push(`co_sexo IN ('M', '1')`);
-      console.log('  ✓ Filtro Sexo aplicado: Masculino (M/1)');
-    } else if (sexo === 'F' || sexo === 'Feminino') {
-      conditions.push(`co_sexo IN ('F', '2')`);
-      console.log('  ✓ Filtro Sexo aplicado: Feminino (F/2)');
-    }
-  }
-  
-  // Escolaridade: buscar por código OU descrição
-  // co_escolaridade é int2 na nova tabela — cast para text
-  if (escolaridade) {
-    conditions.push(`(co_escolaridade::text = $${paramCount} OR ds_escolaridade = $${paramCount})`);
-    params.push(escolaridade);
-    paramCount++;
-    console.log('  ✓ Filtro Escolaridade aplicado:', escolaridade);
-  }
-  
-  // Raça/Cor
-  if (raca) {
-    if (raca === 'Sem informação') {
-      // Filtrar por nulos, vazios ou "SEM INFORMACAO"
-      conditions.push(`(ds_raca_cor IS NULL OR ds_raca_cor = '' OR UPPER(ds_raca_cor) = 'SEM INFORMACAO')`);
-      console.log('  ✓ Filtro Raça aplicado: Sem informação (NULL, vazio ou SEM INFORMACAO)');
+  // ---- Localização (subquery em recenseamento_nova) — suporta multi-seleção ----
+  const addSubqueryFilter = (col, val) => {
+    const vals = normalizeArr(val);
+    if (vals.length === 0) return;
+    if (vals.length === 1) {
+      conditions.push(`co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE ${col} = $${paramCount++})`);
+      params.push(vals[0]);
     } else {
-      conditions.push(`ds_raca_cor = $${paramCount++}`);
-      params.push(raca);
-      console.log('  ✓ Filtro Raça aplicado:', raca);
+      conditions.push(`co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE ${col} = ANY($${paramCount++}))`);
+      params.push(vals);
+    }
+  };
+
+  addSubqueryFilter('sg_uf',            query.uf);
+  addSubqueryFilter('no_macrorregional', query.macro);
+  addSubqueryFilter('no_regional_saude', query.regional);
+  addSubqueryFilter('no_municipio',      query.municipio);
+
+  // Regiões DF — agrega CNES de todas as regiões selecionadas
+  const regioesDF = normalizeArr(query.regiao_saude_df);
+  if (regioesDF.length > 0) {
+    const allCnes = [];
+    regioesDF.forEach(r => allCnes.push(...(dfRegionSaudeMap[r] || []).map(String)));
+    const uniqueCnes = [...new Set(allCnes)];
+    if (uniqueCnes.length > 0) {
+      conditions.push(`co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE co_cnes::text = ANY($${paramCount++}))`);
+      params.push(uniqueCnes);
+      console.log('  ✓ Filtro Região de Saúde DF aplicado:', regioesDF);
+    }
+  }
+  const regioesAdmDF = normalizeArr(query.regiao_adm_df);
+  if (regioesAdmDF.length > 0) {
+    const allCnes = [];
+    regioesAdmDF.forEach(r => allCnes.push(...(dfRegionAdmMap[r] || []).map(String)));
+    const uniqueCnes = [...new Set(allCnes)];
+    if (uniqueCnes.length > 0) {
+      conditions.push(`co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE co_cnes::text = ANY($${paramCount++}))`);
+      params.push(uniqueCnes);
+      console.log('  ✓ Filtro Região Administrativa DF aplicado:', regioesAdmDF);
     }
   }
   
-  // CINE: buscar por código OU descrição
-  if (cine) {
-    conditions.push(`(co_cine = $${paramCount} OR ds_cine = $${paramCount})`);
-    params.push(cine);
-    paramCount++;
-    console.log('  ✓ Filtro CINE aplicado:', cine);
+  // CBO: suporte a múltiplas seleções
+  const cboVals = normalizeArr(query.cbo);
+  if (cboVals.length > 0) {
+    if (cboVals.length === 1) {
+      conditions.push(`(co_cbo_ocupacao::text = $${paramCount} OR ds_cbo_ocupacao = $${paramCount})`);
+      params.push(cboVals[0]);
+      paramCount++;
+    } else {
+      conditions.push(`(co_cbo_ocupacao::text = ANY($${paramCount}) OR ds_cbo_ocupacao = ANY($${paramCount}))`);
+      params.push(cboVals);
+      paramCount++;
+    }
+    console.log('  ✓ Filtro CBO aplicado:', cboVals);
   }
-  
+
+  // Vínculo
+  const vinculoVals = normalizeArr(query.vinculo);
+  if (vinculoVals.length > 0) {
+    if (vinculoVals.length === 1) {
+      conditions.push(`(nu_vinculacao = $${paramCount} OR vinculacao = $${paramCount})`);
+      params.push(vinculoVals[0]);
+      paramCount++;
+    } else {
+      conditions.push(`(nu_vinculacao = ANY($${paramCount}) OR vinculacao = ANY($${paramCount}))`);
+      params.push(vinculoVals);
+      paramCount++;
+    }
+    console.log('  ✓ Filtro Vínculo aplicado:', vinculoVals);
+  }
+
+  // Estabelecimento
+  const estabVals = normalizeArr(query.estabelecimento);
+  if (estabVals.length > 0) {
+    if (estabVals.length === 1) {
+      conditions.push(`co_cnes = $${paramCount++}`);
+      params.push(estabVals[0]);
+    } else {
+      conditions.push(`co_cnes = ANY($${paramCount++})`);
+      params.push(estabVals);
+    }
+    console.log('  ✓ Filtro Estabelecimento aplicado:', estabVals);
+  }
+
+  // Sexo: M/1 = Masculino, F/2 = Feminino — suporta múltiplos
+  const sexoVals = normalizeArr(query.sexo);
+  if (sexoVals.length > 0) {
+    const masc = sexoVals.some(v => v === 'M' || v === 'Masculino');
+    const fem  = sexoVals.some(v => v === 'F' || v === 'Feminino');
+    if (masc && fem) { /* ambos = sem filtro */ }
+    else if (masc) conditions.push(`co_sexo IN ('M', '1')`);
+    else if (fem)  conditions.push(`co_sexo IN ('F', '2')`);
+    console.log('  ✓ Filtro Sexo aplicado:', sexoVals);
+  }
+
+  // Escolaridade
+  const escVals = normalizeArr(query.escolaridade);
+  if (escVals.length > 0) {
+    if (escVals.length === 1) {
+      conditions.push(`(co_escolaridade::text = $${paramCount} OR ds_escolaridade = $${paramCount})`);
+      params.push(escVals[0]);
+      paramCount++;
+    } else {
+      conditions.push(`(co_escolaridade::text = ANY($${paramCount}) OR ds_escolaridade = ANY($${paramCount}))`);
+      params.push(escVals);
+      paramCount++;
+    }
+    console.log('  ✓ Filtro Escolaridade aplicado:', escVals);
+  }
+
+  // Raça/Cor
+  const racaVals = normalizeArr(query.raca);
+  if (racaVals.length > 0) {
+    const semInfo = racaVals.includes('Sem informação');
+    const outros  = racaVals.filter(v => v !== 'Sem informação');
+    if (semInfo && outros.length === 0) {
+      conditions.push(`(ds_raca_cor IS NULL OR ds_raca_cor = '' OR UPPER(ds_raca_cor) = 'SEM INFORMACAO')`);
+    } else if (!semInfo && outros.length > 0) {
+      if (outros.length === 1) { conditions.push(`ds_raca_cor = $${paramCount++}`); params.push(outros[0]); }
+      else                     { conditions.push(`ds_raca_cor = ANY($${paramCount++})`); params.push(outros); }
+    } else if (semInfo && outros.length > 0) {
+      // semInfo OU outros
+      if (outros.length === 1) { conditions.push(`(ds_raca_cor IS NULL OR ds_raca_cor = '' OR UPPER(ds_raca_cor) = 'SEM INFORMACAO' OR ds_raca_cor = $${paramCount++})`); params.push(outros[0]); }
+      else                     { conditions.push(`(ds_raca_cor IS NULL OR ds_raca_cor = '' OR UPPER(ds_raca_cor) = 'SEM INFORMACAO' OR ds_raca_cor = ANY($${paramCount++}))`); params.push(outros); }
+    }
+    console.log('  ✓ Filtro Raça aplicado:', racaVals);
+  }
+
+  // CINE
+  const cineVals = normalizeArr(query.cine);
+  if (cineVals.length > 0) {
+    if (cineVals.length === 1) {
+      conditions.push(`(co_cine = $${paramCount} OR ds_cine = $${paramCount})`);
+      params.push(cineVals[0]);
+      paramCount++;
+    } else {
+      conditions.push(`(co_cine = ANY($${paramCount}) OR ds_cine = ANY($${paramCount}))`);
+      params.push(cineVals);
+      paramCount++;
+    }
+    console.log('  ✓ Filtro CINE aplicado:', cineVals);
+  }
+
   // Tipo de Operação
-  if (operacao) {
-    conditions.push(`no_tipo_operacao_censo = $${paramCount++}`);
-    params.push(operacao);
-    console.log('  ✓ Filtro Operação aplicado:', operacao);
+  const opVals = normalizeArr(query.operacao);
+  if (opVals.length > 0) {
+    if (opVals.length === 1) { conditions.push(`no_tipo_operacao_censo = $${paramCount++}`); params.push(opVals[0]); }
+    else                     { conditions.push(`no_tipo_operacao_censo = ANY($${paramCount++})`); params.push(opVals); }
+    console.log('  ✓ Filtro Operação aplicado:', opVals);
   }
   
   const result = {
@@ -1105,7 +1162,8 @@ app.get('/api/vinculos/tabela', async (req, res) => {
           st_cnes,
           ds_escolaridade,
           ds_raca_cor,
-          ds_cine
+          ds_cine,
+          nome
         FROM censo.recenseados_nova
         ${whereClause}
         ORDER BY ${dedupKey}
@@ -1322,84 +1380,65 @@ function buildResolucaoWhere(filters) {
 
   console.log('🔍 buildResolucaoWhere recebeu:', filters);
 
-  // Filtro: UF
-  if (filters.uf) {
-    conditions.push(`r.sg_uf = $${paramIndex}`);
-    params.push(filters.uf);
+  // Helper local para adicionar filtro com suporte a array (= ou ANY)
+  const addF = (col, val) => {
+    const vals = normalizeArr(val);
+    if (vals.length === 0) return;
+    if (vals.length === 1) { conditions.push(`${col} = $${paramIndex}`); params.push(vals[0]); }
+    else                   { conditions.push(`${col} = ANY($${paramIndex})`); params.push(vals); }
     paramIndex++;
-    console.log(`  ✓ Filtro UF aplicado: ${filters.uf}`);
+  };
+
+  addF('r.sg_uf',                  filters.uf);
+  addF('r.no_macrorregional',       filters.macro);
+  addF('r.no_regional_saude',       filters.regional);
+  addF('r.no_municipio',            filters.municipio);
+  addF('r.recenseador',             filters.recenseador);
+
+  // Regiões DF — agrega CNES de todas as selecionadas
+  const regioesDF = normalizeArr(filters.regiao_saude_df);
+  if (regioesDF.length > 0) {
+    const allCnes = [];
+    regioesDF.forEach(r => allCnes.push(...(dfRegionSaudeMap[r] || []).map(String)));
+    const uniqueCnes = [...new Set(allCnes)];
+    if (uniqueCnes.length > 0) { conditions.push(`r.co_cnes::text = ANY($${paramIndex++})`); params.push(uniqueCnes); }
+    console.log(`  ✓ Filtro Região de Saúde DF aplicado: ${regioesDF}`);
+  }
+  const regioesAdmDF = normalizeArr(filters.regiao_adm_df);
+  if (regioesAdmDF.length > 0) {
+    const allCnes = [];
+    regioesAdmDF.forEach(r => allCnes.push(...(dfRegionAdmMap[r] || []).map(String)));
+    const uniqueCnes = [...new Set(allCnes)];
+    if (uniqueCnes.length > 0) { conditions.push(`r.co_cnes::text = ANY($${paramIndex++})`); params.push(uniqueCnes); }
+    console.log(`  ✓ Filtro Região Administrativa DF aplicado: ${regioesAdmDF}`);
   }
 
-  // Filtro: Macrorregião
-  if (filters.macro) {
-    conditions.push(`r.no_macrorregional = $${paramIndex}`);
-    params.push(filters.macro);
+  // Tipo de Operação (aceita 'op' ou 'operacao')
+  const opVal = filters.op || filters.operacao;
+  if (opVal) {
+    const opVals = normalizeArr(opVal);
+    if (opVals.length === 1) { conditions.push(`v.no_tipo_operacao_censo = $${paramIndex}`); params.push(opVals[0]); }
+    else                     { conditions.push(`v.no_tipo_operacao_censo = ANY($${paramIndex})`); params.push(opVals); }
     paramIndex++;
-    console.log(`  ✓ Filtro Macro aplicado: ${filters.macro}`);
+    console.log(`  ✓ Filtro Operação aplicado: ${opVals}`);
   }
 
-  // Filtro: Região de Saúde
-  if (filters.regional) {
-    conditions.push(`r.no_regional_saude = $${paramIndex}`);
-    params.push(filters.regional);
+  // CBO (multi)
+  const cboVals = normalizeArr(filters.cbo);
+  if (cboVals.length > 0) {
+    if (cboVals.length === 1) { conditions.push(`(v.co_cbo_ocupacao = $${paramIndex} OR v.ds_cbo_ocupacao = $${paramIndex})`); params.push(cboVals[0]); }
+    else                      { conditions.push(`(v.co_cbo_ocupacao = ANY($${paramIndex}) OR v.ds_cbo_ocupacao = ANY($${paramIndex}))`); params.push(cboVals); }
     paramIndex++;
-    console.log(`  ✓ Filtro Regional aplicado: ${filters.regional}`);
+    console.log(`  ✓ Filtro CBO aplicado: ${cboVals}`);
   }
 
-  // Filtro: Município
-  if (filters.municipio) {
-    conditions.push(`r.no_municipio = $${paramIndex}`);
-    params.push(filters.municipio);
+  // Estabelecimento (multi)
+  const estabVals = normalizeArr(filters.estabelecimento);
+  if (estabVals.length > 0) {
+    if (estabVals.length === 1) { conditions.push(`(v.co_cnes = $${paramIndex} OR r.no_razao_social = $${paramIndex})`); params.push(estabVals[0]); }
+    else                        { conditions.push(`(v.co_cnes = ANY($${paramIndex}) OR r.no_razao_social = ANY($${paramIndex}))`); params.push(estabVals); }
     paramIndex++;
-    console.log(`  ✓ Filtro Município aplicado: ${filters.municipio}`);
-  }
-
-  // Filtro: Região de Saúde DF (classificação própria via CNES)
-  if (filters.regiao_saude_df && dfRegionSaudeMap[filters.regiao_saude_df]) {
-    const cnesList = dfRegionSaudeMap[filters.regiao_saude_df].map(String);
-    conditions.push(`r.co_cnes::text = ANY($${paramIndex++})`);
-    params.push(cnesList);
-    console.log(`  ✓ Filtro Região de Saúde DF aplicado: ${filters.regiao_saude_df}`);
-  }
-
-  // Filtro: Região Administrativa DF (classificação própria via CNES)
-  if (filters.regiao_adm_df && dfRegionAdmMap[filters.regiao_adm_df]) {
-    const cnesList = dfRegionAdmMap[filters.regiao_adm_df].map(String);
-    conditions.push(`r.co_cnes::text = ANY($${paramIndex++})`);
-    params.push(cnesList);
-    console.log(`  ✓ Filtro Região Administrativa DF aplicado: ${filters.regiao_adm_df}`);
-  }
-
-  // Filtro: Recenseador
-  if (filters.recenseador) {
-    conditions.push(`r.recenseador = $${paramIndex}`);
-    params.push(filters.recenseador);
-    paramIndex++;
-    console.log(`  ✓ Filtro Recenseador aplicado: ${filters.recenseador}`);
-  }
-
-  // Filtro: Tipo de Operação (aceita 'op' ou 'operacao')
-  if (filters.op || filters.operacao) {
-    conditions.push(`v.no_tipo_operacao_censo = $${paramIndex}`);
-    params.push(filters.op || filters.operacao);
-    paramIndex++;
-    console.log(`  ✓ Filtro Operação aplicado: ${filters.op || filters.operacao}`);
-  }
-
-  // Filtro: CBO (busca por código OU descrição)
-  if (filters.cbo) {
-    conditions.push(`(v.co_cbo_ocupacao = $${paramIndex} OR v.ds_cbo_ocupacao = $${paramIndex})`);
-    params.push(filters.cbo);
-    paramIndex++;
-    console.log(`  ✓ Filtro CBO aplicado: ${filters.cbo}`);
-  }
-
-  // Filtro: Estabelecimento (busca por CNES OU razão social)
-  if (filters.estabelecimento) {
-    conditions.push(`(v.co_cnes = $${paramIndex} OR r.no_razao_social = $${paramIndex})`);
-    params.push(filters.estabelecimento);
-    paramIndex++;
-    console.log(`  ✓ Filtro Estabelecimento aplicado: ${filters.estabelecimento}`);
+    console.log(`  ✓ Filtro Estabelecimento aplicado: ${estabVals}`);
   }
 
   // Filtro: Período de Conclusão do Censo (coluna coletado_em em recenseamento_nova)

@@ -272,6 +272,55 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
 .select2-results__options {
   background-color: var(--surface);
 }
+
+/* SELECT2 — tema escuro para MÚLTIPLA SELEÇÃO (tags/chips) */
+.select2-container--default .select2-selection--multiple {
+  background-color: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 6px !important;
+  min-height: 36px;
+  padding: 2px 4px;
+}
+.select2-container--default.select2-container--focus .select2-selection--multiple {
+  border-color: var(--purple) !important;
+  outline: none;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice {
+  background-color: var(--purple) !important;
+  border: none !important;
+  border-radius: 4px !important;
+  color: #fff !important;
+  padding: 1px 6px 1px 4px !important;
+  margin: 3px 3px !important;
+  font-size: 11.5px;
+  line-height: 18px;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice__display {
+  color: #fff !important;
+  padding-left: 2px;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+  color: rgba(255,255,255,0.75) !important;
+  border: none !important;
+  background: transparent !important;
+  font-size: 13px;
+  margin-right: 2px;
+  cursor: pointer;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+  color: #fff !important;
+  background: rgba(255,255,255,0.15) !important;
+  border-radius: 3px;
+}
+.select2-container--default .select2-selection--multiple .select2-search__field {
+  background: transparent !important;
+  color: var(--text) !important;
+  margin-top: 4px;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__placeholder {
+  color: var(--muted);
+  margin-top: 4px;
+}
 </style>
 </head>
 <body>
@@ -575,6 +624,8 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
         <thead>
           <tr>
             <th onclick="srt(8)">CNES ↕</th>
+            <th onclick="srt(1)">CPF ↕</th>
+            <th onclick="srt(13)">Nome ↕</th>
             <th onclick="srt(3)">Ocupação (CBO) ↕</th>
             <th onclick="srt(4)">Tipo de Vínculo ↕</th>
             <th onclick="srt(2)">Sexo ↕</th>
@@ -607,8 +658,8 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
 // ==========================================
 let D = null;
 let filteredTable = [];
-let activeFilters = {op:'',cnes:'',sexo:'',esc:'',raca:'',cine:'',cbo:'',vinculo:'',estabelecimento:'',
-                    uf:'',macro:'',regional:'',municipio:'',regiao_saude_df:'',regiao_adm_df:''};
+let activeFilters = {op:[],cnes:'',sexo:[],esc:[],raca:[],cine:[],cbo:[],vinculo:[],estabelecimento:[],
+                    uf:[],macro:[],regional:[],municipio:[],regiao_saude_df:[],regiao_adm_df:[]};
 // Armazena dados DF para routing inteligente de filtros
 let _filtrosDF = null;
 let sortIdx = -1, sortDir = 1;
@@ -816,21 +867,22 @@ async function loadTableData(pageNum = 1) {
     };
 
     // Adicionar filtros ativos (mesmos nomes que reloadWithFilters)
-    if (activeFilters.op) filters.operacao = activeFilters.op;
-    if (activeFilters.sexo) filters.sexo = activeFilters.sexo;
-    if (activeFilters.esc) filters.escolaridade = activeFilters.esc;
-    if (activeFilters.raca) filters.raca = activeFilters.raca;
-    if (activeFilters.cine) filters.cine = activeFilters.cine;
-    if (activeFilters.cbo) filters.cbo = activeFilters.cbo;
-    if (activeFilters.vinculo) filters.vinculo = activeFilters.vinculo;
-    if (activeFilters.estabelecimento) filters.estabelecimento = activeFilters.estabelecimento;
+    const hasVal = v => Array.isArray(v) ? v.length > 0 : !!v;
+    if (hasVal(activeFilters.op))             filters.operacao        = activeFilters.op;
+    if (hasVal(activeFilters.sexo))           filters.sexo            = activeFilters.sexo;
+    if (hasVal(activeFilters.esc))            filters.escolaridade    = activeFilters.esc;
+    if (hasVal(activeFilters.raca))           filters.raca            = activeFilters.raca;
+    if (hasVal(activeFilters.cine))           filters.cine            = activeFilters.cine;
+    if (hasVal(activeFilters.cbo))            filters.cbo             = activeFilters.cbo;
+    if (hasVal(activeFilters.vinculo))        filters.vinculo         = activeFilters.vinculo;
+    if (hasVal(activeFilters.estabelecimento))filters.estabelecimento = activeFilters.estabelecimento;
     // Localização
-    if (activeFilters.uf) filters.uf = activeFilters.uf;
-    if (activeFilters.macro) filters.macro = activeFilters.macro;
-    if (activeFilters.regional) filters.regional = activeFilters.regional;
-    if (activeFilters.municipio) filters.municipio = activeFilters.municipio;
-    if (activeFilters.regiao_saude_df) filters.regiao_saude_df = activeFilters.regiao_saude_df;
-    if (activeFilters.regiao_adm_df) filters.regiao_adm_df = activeFilters.regiao_adm_df;
+    if (hasVal(activeFilters.uf))            filters.uf              = activeFilters.uf;
+    if (hasVal(activeFilters.macro))         filters.macro           = activeFilters.macro;
+    if (hasVal(activeFilters.regional))      filters.regional        = activeFilters.regional;
+    if (hasVal(activeFilters.municipio))     filters.municipio       = activeFilters.municipio;
+    if (hasVal(activeFilters.regiao_saude_df))filters.regiao_saude_df = activeFilters.regiao_saude_df;
+    if (hasVal(activeFilters.regiao_adm_df)) filters.regiao_adm_df  = activeFilters.regiao_adm_df;
     if (busca) filters.busca = busca;
     
     console.log('📋 Carregando tabela com filtros:', filters);
@@ -844,19 +896,20 @@ async function loadTableData(pageNum = 1) {
     
     // Transformar dados para formato esperado
     filteredTable = result.data.data.map(row => [
-      row.cpf_ultimos_4,
-      row.nu_cpf,
-      row.co_sexo,
-      row.ds_cbo_ocupacao,
-      row.vinculacao,
-      row.carga_horaria_total,
-      row.vl_remuneracao,
-      row.no_tipo_operacao_censo,
-      row.co_cnes,
-      row.st_cnes,
-      row.ds_escolaridade,
-      row.ds_raca_cor,
-      row.ds_cine
+      row.cpf_ultimos_4,    // 0
+      row.nu_cpf,           // 1
+      row.co_sexo,          // 2
+      row.ds_cbo_ocupacao,  // 3
+      row.vinculacao,       // 4
+      row.carga_horaria_total, // 5
+      row.vl_remuneracao,   // 6
+      row.no_tipo_operacao_censo, // 7
+      row.co_cnes,          // 8
+      row.st_cnes,          // 9
+      row.ds_escolaridade,  // 10
+      row.ds_raca_cor,      // 11
+      row.ds_cine,          // 12
+      row.nome              // 13
     ]);
     
     // Atualizar paginação
@@ -946,6 +999,31 @@ function populateSelectMergedVinc(id, standardItems, dfItems, selectedUF) {
 }
 
 // ==========================================
+// REPOPULAR APENAS FILTROS DEPENDENTES DE UF (macro, regional, municipio)
+// — chamado quando UF muda, sem recriar o f-uf nem re-inicializar Select2 nele
+function repopulateDependentes(selectedUF) {
+  if (!window._lastFiltrosEstab) return;
+  const filtrosEstab = window._lastFiltrosEstab;
+  const dfRegioesSaude = _filtrosDF ? (_filtrosDF.regioes_saude_df || []) : [];
+  const dfRegioesAdm   = _filtrosDF ? (_filtrosDF.regioes_adm_df   || []) : [];
+  const uf = selectedUF || '';
+
+  // Destruir Select2 dos dependentes antes de repopular
+  ['f-macro', 'f-regional', 'f-municipio'].forEach(id => {
+    const $s = $('#' + id);
+    if ($s.data('select2')) $s.select2('destroy');
+  });
+
+  populateSelectSimples('f-macro', filtrosEstab.macrorregiao || [], uf);
+  populateSelectMergedVinc('f-regional', filtrosEstab.regional || [], dfRegioesSaude, uf);
+  populateSelectMergedVinc('f-municipio', filtrosEstab.municipio || [], dfRegioesAdm, uf);
+
+  // Re-inicializar Select2 nos dependentes
+  ['f-macro', 'f-regional', 'f-municipio'].forEach(id => {
+    initSelect2SingleVinc($('#' + id));
+  });
+}
+
 // POPULAR FILTROS
 // ==========================================
 function populateFilters(data, filtrosEstab, selectedUF) {
@@ -1010,12 +1088,23 @@ function popWithSearch(id, items) {
 // Helper: inicializa Select2 num único elemento
 function initSelect2SingleVinc($sel) {
   $sel.select2({
+    multiple: true,
+    closeOnSelect: false,
     placeholder: 'Selecione...',
     allowClear: true,
     width: '100%',
     language: {
       noResults: () => 'Nenhum resultado encontrado',
       searching: () => 'Buscando...'
+    },
+    // Oculta a opção vazia ("Todas"/"Todos") do dropdown e das tags selecionadas
+    templateResult: function(data) {
+      if (!data.id) return null;
+      return data.text;
+    },
+    templateSelection: function(data) {
+      if (!data.id) return $('<span>');
+      return data.text;
     }
   });
 }
@@ -1035,22 +1124,23 @@ function initializeSelect2() {
 
       // Cascata de UF: ao selecionar UF repopula Macro/Regional/Município
       if (id === 'f-uf') {
-        $select.off('select2:select select2:clear').on('select2:select select2:clear', async function() {
-          const ufVal = $(this).val() || '';
-          activeFilters.uf = ufVal;
+        $select.off('select2:select select2:unselect select2:clear')
+               .on('select2:select select2:unselect select2:clear', async function() {
+          const rawUf = $(this).val();
+          const ufVals = rawUf ? (Array.isArray(rawUf) ? rawUf : [rawUf]) : [];
+          activeFilters.uf = ufVals;
           // Limpar dependentes
           ['f-macro', 'f-regional', 'f-municipio'].forEach(depId => {
             const $d = $('#' + depId);
-            if ($d.data('select2')) $d.val('').trigger('change.select2');
-            activeFilters[depId.replace('f-', '')] = '';
+            if ($d.data('select2')) $d.val(null).trigger('change.select2');
+            activeFilters[depId.replace('f-', '')] = [];
           });
-          activeFilters.regiao_saude_df = '';
-          activeFilters.regiao_adm_df = '';
-          // Repopular com UF selecionada (reusa dados já carregados em filtrosEstab)
-          if (window._lastFiltrosEstab) {
-            populateFilters(window._lastFiltrosVinc, window._lastFiltrosEstab, ufVal);
-            // Restaurar valor de UF após reinicialização do Select2
-            if (ufVal) setTimeout(() => $('#f-uf').val(ufVal).trigger('change.select2'), 50);
+          activeFilters.regiao_saude_df = [];
+          activeFilters.regiao_adm_df = [];
+          // Repopular apenas os filtros dependentes (sem recriar f-uf)
+          const ufSel = ufVals[0] || '';
+          if (window._lastFiltrosEstab && window._lastFiltrosVinc) {
+            repopulateDependentes(ufSel);
           }
           updateVincFilterBadge();
           await reloadWithFilters();
@@ -1071,35 +1161,25 @@ function initializePainel() {
   ['f-macro','f-regional','f-municipio','f-op','f-sexo','f-esc','f-raca','f-cine','f-cbo','f-vinculo','f-estabelecimento'].forEach(id=>{
     const $elem = $('#' + id);
     if ($elem.length) {
-      // Usar evento do Select2
-      $elem.on('select2:select select2:clear change', async function() {
-        const value = $(this).val() || '';
+      $elem.on('select2:select select2:unselect select2:clear change', async function() {
+        const rawVal = $(this).val();
+        // Filtrar valor vazio (opção "Todas"/"Todos") — o placeholder é gerenciado pelo Select2
+        const vals = (rawVal ? (Array.isArray(rawVal) ? rawVal : [rawVal]) : []).filter(v => v !== '');
 
-        // Routing DF: decidir se é regional/municipio DF ou padrão CNES
+        // Routing DF: separar valores "Classificação DF" de "Padrão CNES"
         if (id === 'f-regional') {
           const dfRegioesSaude = _filtrosDF ? (_filtrosDF.regioes_saude_df || []) : [];
-          if (dfRegioesSaude.includes(value)) {
-            activeFilters.regiao_saude_df = value;
-            activeFilters.regional = '';
-          } else {
-            activeFilters.regional = value;
-            activeFilters.regiao_saude_df = '';
-          }
+          activeFilters.regiao_saude_df = vals.filter(v => dfRegioesSaude.includes(v));
+          activeFilters.regional        = vals.filter(v => !dfRegioesSaude.includes(v));
         } else if (id === 'f-municipio') {
           const dfRegioesAdm = _filtrosDF ? (_filtrosDF.regioes_adm_df || []) : [];
-          if (dfRegioesAdm.includes(value)) {
-            activeFilters.regiao_adm_df = value;
-            activeFilters.municipio = '';
-          } else {
-            activeFilters.municipio = value;
-            activeFilters.regiao_adm_df = '';
-          }
+          activeFilters.regiao_adm_df = vals.filter(v => dfRegioesAdm.includes(v));
+          activeFilters.municipio     = vals.filter(v => !dfRegioesAdm.includes(v));
         } else {
-          // Atualizar filtro da tabela
-          activeFilters[id.replace('f-','')] = value;
+          activeFilters[id.replace('f-','')] = vals;
         }
 
-        console.log(`🔄 Filtro ${id} alterado para: ${value}`);
+        console.log(`🔄 Filtro ${id} alterado para:`, vals);
 
         // Atualizar badge de filtros ativos
         updateVincFilterBadge();
@@ -1134,38 +1214,47 @@ async function reloadWithFilters() {
   try {
     showLoading('Aplicando filtros...');
     
-    // Coletar valores dos filtros
-    const regionalVal = $('#f-regional').val() || '';
-    const municipioVal = $('#f-municipio').val() || '';
+    // Coletar valores — Select2 multiple retorna array ou null
+    // gvArr: coleta array de valores, filtrando valores vazios (opção "Todas"/"Todos")
+    const gvArr = id => { const v = $('#' + id).val(); return (v && v.length) ? (Array.isArray(v) ? v : [v]).filter(x => x !== '') : []; };
+
+    const regionalVals  = gvArr('f-regional');
+    const municipioVals = gvArr('f-municipio');
     const dfRegioesSaude = _filtrosDF ? (_filtrosDF.regioes_saude_df || []) : [];
     const dfRegioesAdm   = _filtrosDF ? (_filtrosDF.regioes_adm_df   || []) : [];
-    const isDFRegional  = dfRegioesSaude.includes(regionalVal);
-    const isDFMunicipio = dfRegioesAdm.includes(municipioVal);
+
+    const dfRegionais   = regionalVals.filter(v => dfRegioesSaude.includes(v));
+    const stdRegionais  = regionalVals.filter(v => !dfRegioesSaude.includes(v));
+    const dfMunicipios  = municipioVals.filter(v => dfRegioesAdm.includes(v));
+    const stdMunicipios = municipioVals.filter(v => !dfRegioesAdm.includes(v));
 
     const filters = {
-      cbo: document.getElementById('f-cbo')?.value || '',
-      vinculo: document.getElementById('f-vinculo')?.value || '',
-      estabelecimento: document.getElementById('f-estabelecimento')?.value || '',
-      sexo: document.getElementById('f-sexo')?.value || '',
-      escolaridade: document.getElementById('f-esc')?.value || '',
-      raca: document.getElementById('f-raca')?.value || '',
-      cine: document.getElementById('f-cine')?.value || '',
-      operacao: document.getElementById('f-op')?.value || '',
-      // Localização
-      uf: $('#f-uf').val() || '',
-      macro: $('#f-macro').val() || '',
-      regional:        isDFRegional  ? '' : regionalVal,
-      municipio:       isDFMunicipio ? '' : municipioVal,
-      regiao_saude_df: isDFRegional  ? regionalVal  : '',
-      regiao_adm_df:   isDFMunicipio ? municipioVal : ''
+      cbo:             gvArr('f-cbo'),
+      vinculo:         gvArr('f-vinculo'),
+      estabelecimento: gvArr('f-estabelecimento'),
+      sexo:            gvArr('f-sexo'),
+      escolaridade:    gvArr('f-esc'),
+      raca:            gvArr('f-raca'),
+      cine:            gvArr('f-cine'),
+      operacao:        gvArr('f-op'),
+      uf:              gvArr('f-uf'),
+      macro:           gvArr('f-macro'),
+      regional:        stdRegionais,
+      municipio:       stdMunicipios,
+      regiao_saude_df: dfRegionais,
+      regiao_adm_df:   dfMunicipios
     };
-    
+
     console.log('📊 Filtros coletados:', filters);
-    
-    // Construir query string
+
+    // Construir query string — arrays viram parâmetros repetidos
     const queryParams = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => {
-      if (value) queryParams.append(key, value);
+      if (Array.isArray(value)) {
+        value.forEach(v => { if (v) queryParams.append(key, v); });
+      } else if (value) {
+        queryParams.append(key, value);
+      }
     });
     
     const queryString = queryParams.toString();
@@ -1247,7 +1336,7 @@ async function reloadWithFilters() {
 // APLICAR FILTROS
 // ==========================================
 async function applyFilters(){
-  const hasFilter = Object.values(activeFilters).some(v=>v!=='');
+  const hasFilter = Object.values(activeFilters).some(v => Array.isArray(v) ? v.length > 0 : !!v);
   const note = document.getElementById('filter-note');
   if (note) {
     note.textContent = hasFilter 
@@ -1260,7 +1349,7 @@ async function applyFilters(){
 }
 
 function resetFilters(){
-  Object.keys(activeFilters).forEach(k => activeFilters[k] = '');
+  Object.keys(activeFilters).forEach(k => { activeFilters[k] = Array.isArray(activeFilters[k]) ? [] : ''; });
   ['f-uf','f-macro','f-regional','f-municipio','f-op','f-sexo','f-esc','f-raca','f-cine','f-cbo','f-vinculo','f-estabelecimento'].forEach(id=>{
     const $elem = $('#' + id);
     if ($elem.length && $elem.data('select2')) {
@@ -1794,11 +1883,10 @@ function toggleFiltersVinc() {
 
 function updateVincFilterBadge() {
   const ids = ['f-uf','f-macro','f-regional','f-municipio','f-op','f-sexo','f-esc','f-raca','f-cine','f-cbo','f-vinculo','f-estabelecimento'];
-  const dfCount = (activeFilters.regiao_saude_df ? 1 : 0) + (activeFilters.regiao_adm_df ? 1 : 0);
-  const count = ids.filter(id => {
-    const el = document.getElementById(id);
-    return el && el.value && el.value !== '';
-  }).length + dfCount;
+  const hasVals = id => { const v = $('#' + id).val(); return v ? (Array.isArray(v) ? v.filter(x => x !== '').length > 0 : v !== '') : false; };
+  const dfCount = ((activeFilters.regiao_saude_df || []).length > 0 ? 1 : 0) +
+                  ((activeFilters.regiao_adm_df   || []).length > 0 ? 1 : 0);
+  const count = ids.filter(id => hasVals(id)).length + dfCount;
   const badge = document.getElementById('vinc-filter-badge');
   if (badge) {
     badge.textContent = count;
@@ -1823,36 +1911,57 @@ function searchVinculos() {
 // ==========================================
 async function exportCSVVinculos() {
   try {
-    showLoading('Exportando dados...');
+    showLoading('Exportando dados... (isso pode levar alguns segundos)');
     const busca = document.getElementById('tbl-search')?.value || '';
+    const hasVal = v => Array.isArray(v) ? v.length > 0 : !!v;
     const filters = {
-      page: 1, limit: 99999,
-      operacao: activeFilters.op || '',
-      sexo: activeFilters.sexo || '',
-      escolaridade: activeFilters.esc || '',
-      raca: activeFilters.raca || '',
-      cine: activeFilters.cine || '',
-      cbo: activeFilters.cbo || '',
-      vinculo: activeFilters.vinculo || '',
-      estabelecimento: activeFilters.estabelecimento || '',
+      page: 1, limit: 999999,
       busca
     };
+    // Repassar todos os filtros ativos (mesma lógica de loadTableData)
+    if (hasVal(activeFilters.op))              filters.operacao         = activeFilters.op;
+    if (hasVal(activeFilters.sexo))            filters.sexo             = activeFilters.sexo;
+    if (hasVal(activeFilters.esc))             filters.escolaridade     = activeFilters.esc;
+    if (hasVal(activeFilters.raca))            filters.raca             = activeFilters.raca;
+    if (hasVal(activeFilters.cine))            filters.cine             = activeFilters.cine;
+    if (hasVal(activeFilters.cbo))             filters.cbo              = activeFilters.cbo;
+    if (hasVal(activeFilters.vinculo))         filters.vinculo          = activeFilters.vinculo;
+    if (hasVal(activeFilters.estabelecimento)) filters.estabelecimento  = activeFilters.estabelecimento;
+    if (hasVal(activeFilters.uf))              filters.uf               = activeFilters.uf;
+    if (hasVal(activeFilters.macro))           filters.macro            = activeFilters.macro;
+    if (hasVal(activeFilters.regional))        filters.regional         = activeFilters.regional;
+    if (hasVal(activeFilters.municipio))       filters.municipio        = activeFilters.municipio;
+    if (hasVal(activeFilters.regiao_saude_df)) filters.regiao_saude_df  = activeFilters.regiao_saude_df;
+    if (hasVal(activeFilters.regiao_adm_df))   filters.regiao_adm_df   = activeFilters.regiao_adm_df;
+
     const result = await apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_TABELA, filters);
     hideLoading();
     if (!result.success) { alert('Erro ao exportar: ' + result.error); return; }
 
     const rows = result.data.data;
     const sexoL = {'M':'Masculino','F':'Feminino','1':'Masculino','2':'Feminino'};
-    const headers = ['CNES','Ocupação (CBO)','Tipo de Vínculo','Sexo','Escolaridade','Formação (CINE)','C.H. Total','Operação','Sit. CNES'];
+    // CPF formatado como fórmula texto (="XXXXXXXXXXX") para preservar zeros à esquerda
+    // em Excel, LibreOffice e Google Sheets. padStart garante sempre 11 dígitos.
+    const fmtTxt = (v, len) => `="` + String(v||'').padStart(len,'0') + `"`;
+    const esc = v => `"${String(v).replace(/"/g,'""')}"`;
+    const headers = ['CNES','CPF','Nome','Ocupação (CBO)','Tipo de Vínculo','Sexo','Escolaridade','Formação (CINE)','C.H. Total','Operação','Sit. CNES'];
     const csvRows = rows.map(r => [
-      r.co_cnes||'', r.ds_cbo_ocupacao||'', r.vinculacao||'',
-      sexoL[r.co_sexo]||r.co_sexo||'', r.ds_escolaridade||'',
-      r.ds_cine||'', r.carga_horaria_total||0,
-      r.no_tipo_operacao_censo||'', r.st_cnes||''
-    ]);
-    const csv = [headers, ...csvRows]
-      .map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
-      .join('\n');
+      fmtTxt(r.co_cnes, 7),        // CNES como texto, sempre 7 dígitos
+      fmtTxt(r.nu_cpf, 11),        // CPF como texto, sempre 11 dígitos
+      esc(r.nome||''),
+      esc(r.ds_cbo_ocupacao||''),
+      esc(r.vinculacao||''),
+      esc(sexoL[r.co_sexo]||r.co_sexo||''),
+      esc(r.ds_escolaridade||''),
+      esc(r.ds_cine||''),
+      esc(r.carga_horaria_total||0),
+      esc(r.no_tipo_operacao_censo||''),
+      esc(r.st_cnes||'')
+    ].join(','));
+    const csv = [
+      headers.map(h => esc(h)).join(','),
+      ...csvRows
+    ].join('\n');
     const blob = new Blob(['\uFEFF' + csv], {type: 'text/csv;charset=utf-8;'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1893,6 +2002,8 @@ function renderTable(){
   if (tbody) {
     tbody.innerHTML=pg.map(r=>`<tr>
       <td style="font-family:'JetBrains Mono',monospace;color:var(--muted)">${r[8]||''}</td>
+      <td style="font-family:'JetBrains Mono',monospace;color:var(--muted);font-size:11px">${r[1]||''}</td>
+      <td title="${r[13]||''}">${(r[13]||'').length>35?(r[13]||'').slice(0,33)+'…':r[13]||'—'}</td>
       <td title="${r[3]||''}">${(r[3]||'').length>40?(r[3]||'').slice(0,38)+'…':r[3]||''}</td>
       <td>${r[4]||''}</td>
       <td>${sexoLabel[r[2]]||r[2]||''}</td>
