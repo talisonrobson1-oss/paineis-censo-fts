@@ -10,6 +10,7 @@
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 
   /* LOADING STATE */
@@ -943,7 +944,7 @@
       <h3>Estabelecimentos <span id="table-count" style="color:var(--text);font-family:JetBrains Mono,monospace;font-size:11px;margin-left:8px"></span></h3>
       <div style="display:flex;gap:8px;align-items:center;">
         <input class="search-input" id="table-search" placeholder="Buscar por nome, CNES, município…" oninput="renderTable()">
-        <button class="btn-export" onclick="exportCSV()" title="Exportar todos os registros filtrados">↓ CSV</button>
+        <button class="btn-export" onclick="exportCSV()" title="Exportar todos os registros filtrados">↓ XLSX</button>
       </div>
     </div>
     <div class="table-scroll">
@@ -1947,7 +1948,7 @@ function nextPage() {
 }
 
 // ==========================================
-// EXPORTAR CSV
+// EXPORTAR XLSX — ESTABELECIMENTOS
 // ==========================================
 async function exportCSV() {
   try {
@@ -1964,29 +1965,45 @@ async function exportCSV() {
     const rows = result.data.data;
     const headers = ['CNES','Nome Fantasia','UF','Município','Regional de Saúde','Esfera','Vínculo SUS','Total Vínculos','Recenseador','Situação','Dt. Atualização'];
     const fmtDate = d => { try { return d ? new Date(d).toLocaleDateString('pt-BR') : ''; } catch { return d||''; } };
-    const csvRows = rows.map(r => [
-      r.co_cnes||'', r.no_fantasia||'', r.sg_uf||'', r.no_municipio||'', r.no_regional_saude||'',
-      r.esfera||'', r.vinculado_sus==='S'?'Sim':r.vinculado_sus==='N'?'Não':'',
-      r.total_vinculos!=null?parseInt(r.total_vinculos):'', r.recenseador||'',
-      r.situacao_recenseamento||'', fmtDate(r.dt_atualizacao)
+
+    // s = string (preserva zeros \u00E0 esquerda), n = n\u00FAmero
+    const S = v => ({ t: 's', v: String(v ?? '') });
+    const N = v => ({ t: 'n', v: v != null ? Number(v) : 0 });
+
+    const dataRows = rows.map(r => [
+      S(String(r.co_cnes || '').padStart(7, '0')),   // CNES \u2014 7 d\u00EDgitos, tipo string
+      S(r.no_fantasia || ''),
+      S(r.sg_uf || ''),
+      S(r.no_municipio || ''),
+      S(r.no_regional_saude || ''),
+      S(r.esfera || ''),
+      S(r.vinculado_sus === 'S' ? 'Sim' : r.vinculado_sus === 'N' ? 'N\u00E3o' : ''),
+      N(r.total_vinculos),
+      S(r.recenseador || ''),
+      S(r.situacao_recenseamento || ''),
+      S(fmtDate(r.dt_atualizacao))
     ]);
 
-    const csv = [headers, ...csvRows]
-      .map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
-      .join('\n');
+    const wsData = [headers, ...dataRows];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [{wch:10},{wch:40},{wch:5},{wch:25},{wch:30},{wch:15},{wch:12},{wch:14},{wch:25},{wch:20},{wch:14}];
 
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Estabelecimentos');
+
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'estabelecimentos_' + new Date().toISOString().slice(0,10) + '.csv';
+    a.download = 'estabelecimentos_' + new Date().toISOString().slice(0,10) + '.xlsx';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   } catch (err) {
     hideLoading();
-    console.error('Erro CSV:', err);
+    console.error('Erro XLSX estabelecimentos:', err);
   }
 }
 

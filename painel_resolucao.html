@@ -10,6 +10,7 @@
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 
 /* LOADING STATE */
@@ -467,7 +468,7 @@ tr:hover{background:var(--surface2);}
       <h3>Divergências <span id="tbl-count" style="color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;margin-left:8px"></span></h3>
       <div style="display:flex;gap:8px;align-items:center;">
         <input class="search-inp" id="tbl-search" placeholder="Buscar por CPF, CNES, CBO..." oninput="searchResolucao()">
-        <button class="btn-export" onclick="exportCSVResolucao()" title="Exportar registros filtrados">↓ CSV</button>
+        <button class="btn-export" onclick="exportCSVResolucao()" title="Exportar registros filtrados">↓ XLSX</button>
       </div>
     </div>
     <div class="tbl-scroll">
@@ -502,7 +503,7 @@ tr:hover{background:var(--surface2);}
   <div class="tbl-wrap" id="estabs-pendentes-wrap">
     <div class="tbl-hdr">
       <h3>Estabelecimentos <span id="estabs-pend-count" style="color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;margin-left:8px"></span></h3>
-      <button class="btn-export" onclick="exportEstabsPendentes()" title="Exportar CSV">↓ CSV</button>
+      <button class="btn-export" onclick="exportEstabsPendentes()" title="Exportar XLSX">↓ XLSX</button>
     </div>
     <div class="tbl-scroll">
       <table>
@@ -631,26 +632,44 @@ async function exportCSVResolucao() {
     if (!result.success) { alert('Erro ao exportar: ' + result.error); return; }
 
     const rows = result.data.data || [];
+
+    // s = string (preserva zeros a esquerda)
+    const S = v => ({ t: 's', v: String(v ?? '') });
+
     const headers = ['CPF','CNES','Estabelecimento','CBO','Vínculo','Operação','UF','Município','Status'];
-    const csvRows = rows.map(r => [
-      r.nu_cpf||'', r.co_cnes||'', r.no_razao_social||'', r.ds_cbo_ocupacao||'',
-      r.vinculacao||'', r.no_tipo_operacao_censo||'', r.sg_uf||'', r.no_municipio||'', r.status||''
+
+    const dataRows = rows.map(r => [
+      S(String(r.nu_cpf  || '').padStart(11, '0')),
+      S(String(r.co_cnes || '').padStart(7,  '0')),
+      S(r.no_razao_social || ''),
+      S(r.ds_cbo_ocupacao || ''),
+      S(r.vinculacao || ''),
+      S(r.no_tipo_operacao_censo || ''),
+      S(r.sg_uf || ''),
+      S(r.no_municipio || ''),
+      S(r.status || '')
     ]);
-    const csv = [headers, ...csvRows]
-      .map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob(['\uFEFF' + csv], {type: 'text/csv;charset=utf-8;'});
+
+    const wsData = [headers, ...dataRows];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [{wch:14},{wch:10},{wch:40},{wch:12},{wch:45},{wch:12},{wch:5},{wch:25},{wch:12}];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Resolução');
+
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'resolucao_' + new Date().toISOString().slice(0,10) + '.csv';
+    a.download = 'resolucao_' + new Date().toISOString().slice(0,10) + '.xlsx';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   } catch(err) {
     hideLoading();
-    console.error('Erro CSV resolucao:', err);
+    console.error('Erro XLSX resolucao:', err);
   }
 }
 
@@ -1877,16 +1896,30 @@ function renderEstabsPendentesErro() {
 
 function exportEstabsPendentes() {
   if (!_estabsPendentesData.length) return;
+
+  const S = v => ({ t: 's', v: String(v ?? '') });
+  const N = v => ({ t: 'n', v: v != null ? Number(v) : 0 });
+
   const header = ['CNES', 'Estabelecimento', 'UF', 'Município', 'Total', 'Resolvidas', 'Pendentes', '% Resolvido'];
-  const rows = _estabsPendentesData.map(r => [
-    r.co_cnes, r.no_razao_social, r.sg_uf, r.no_municipio,
-    r.total, r.resolvidas, r.pendentes,
-    r.total > 0 ? ((r.resolvidas / r.total) * 100).toFixed(1) + '%' : '0%'
+  const dataRows = _estabsPendentesData.map(r => [
+    S(String(r.co_cnes || '').padStart(7, '0')),
+    S(r.no_razao_social || ''),
+    S(r.sg_uf || ''),
+    S(r.no_municipio || ''),
+    N(r.total),
+    N(r.resolvidas),
+    N(r.pendentes),
+    S(r.total > 0 ? ((r.resolvidas / r.total) * 100).toFixed(1) + '%' : '0%')
   ]);
-  const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+
+  const ws = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
+  ws['!cols'] = [{wch:10},{wch:40},{wch:5},{wch:25},{wch:8},{wch:10},{wch:10},{wch:12}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Estabs Pendentes');
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = 'estabs_pendentes.csv'; a.click();
+  const a = document.createElement('a'); a.href = url; a.download = 'estabs_pendentes.xlsx'; a.click();
   URL.revokeObjectURL(url);
 }
 

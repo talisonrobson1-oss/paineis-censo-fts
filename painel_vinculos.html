@@ -10,6 +10,7 @@
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 
 /* LOADING STATE */
@@ -616,7 +617,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
       <h3>Vínculos <span id="tbl-count" style="color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;margin-left:8px"></span></h3>
       <div style="display:flex;gap:8px;align-items:center;">
         <input class="search-inp" id="tbl-search" placeholder="Buscar por CBO, vínculo, CNES…" oninput="searchVinculos()">
-        <button class="btn-export" onclick="exportCSVVinculos()" title="Exportar registros filtrados">↓ CSV</button>
+        <button class="btn-export" onclick="exportCSVVinculos()" title="Exportar registros filtrados">↓ XLSX</button>
       </div>
     </div>
     <div class="tbl-scroll">
@@ -1911,7 +1912,7 @@ function searchVinculos() {
 }
 
 // ==========================================
-// EXPORTAR CSV — VÍNCULOS
+// EXPORTAR XLSX — VÍNCULOS
 // ==========================================
 async function exportCSVVinculos() {
   try {
@@ -1944,42 +1945,49 @@ async function exportCSVVinculos() {
 
     const rows = result.data.data;
     const sexoL = {'M':'Masculino','F':'Feminino','1':'Masculino','2':'Feminino'};
-    // CPF formatado como fórmula texto (="XXXXXXXXXXX") para preservar zeros à esquerda
-    // em Excel, LibreOffice e Google Sheets. padStart garante sempre 11 dígitos.
-    const fmtTxt = (v, len) => `="` + String(v||'').padStart(len,'0') + `"`;
-    const esc = v => `"${String(v).replace(/"/g,'""')}"`;
+
+    // s = string (preserva zeros à esquerda), n = número
+    const S = v => ({ t: 's', v: String(v ?? '') });
+    const N = v => ({ t: 'n', v: v != null ? Number(v) : 0 });
+
     const headers = ['CNES','CPF','Nome','Cód. CBO','Ocupação (CBO)','Cód. Vinculação','Tipo de Vínculo','Sexo','Escolaridade','Formação (CINE)','C.H. Total','Operação','Sit. CNES'];
-    const csvRows = rows.map(r => [
-      fmtTxt(r.co_cnes, 7),         // CNES como texto, sempre 7 dígitos
-      fmtTxt(r.nu_cpf, 11),         // CPF como texto, sempre 11 dígitos
-      esc(r.nome||''),
-      esc(r.co_cbo_ocupacao||''),
-      esc(r.ds_cbo_ocupacao||''),
-      esc(r.nu_vinculacao||''),
-      esc(r.vinculacao||''),
-      esc(sexoL[r.co_sexo]||r.co_sexo||''),
-      esc(r.ds_escolaridade||''),
-      esc(r.ds_cine||''),
-      esc(r.carga_horaria_total||0),
-      esc(r.no_tipo_operacao_censo||''),
-      esc(r.st_cnes||'')
-    ].join(','));
-    const csv = [
-      headers.map(h => esc(h)).join(','),
-      ...csvRows
-    ].join('\n');
-    const blob = new Blob(['\uFEFF' + csv], {type: 'text/csv;charset=utf-8;'});
+
+    const dataRows = rows.map(r => [
+      S(String(r.co_cnes || '').padStart(7,  '0')),   // CNES — 7 dígitos, tipo string
+      S(String(r.nu_cpf  || '').padStart(11, '0')),   // CPF  — 11 dígitos, tipo string
+      S(r.nome || ''),
+      S(String(r.co_cbo_ocupacao || '')),              // Cód. CBO — tipo string
+      S(r.ds_cbo_ocupacao || ''),
+      S(String(r.nu_vinculacao || '')),                // Cód. Vinculação — tipo string
+      S(r.vinculacao || ''),
+      S(sexoL[r.co_sexo] || r.co_sexo || ''),
+      S(r.ds_escolaridade || ''),
+      S(r.ds_cine || ''),
+      N(r.carga_horaria_total),
+      S(r.no_tipo_operacao_censo || ''),
+      S(r.st_cnes || '')
+    ]);
+
+    const wsData = [headers, ...dataRows];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [{wch:10},{wch:14},{wch:35},{wch:10},{wch:40},{wch:14},{wch:45},{wch:12},{wch:20},{wch:25},{wch:10},{wch:12},{wch:10}];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'V\u00EDnculos');
+
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([wbout], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'vinculos_' + new Date().toISOString().slice(0,10) + '.csv';
+    a.download = 'vinculos_' + new Date().toISOString().slice(0,10) + '.xlsx';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   } catch(err) {
     hideLoading();
-    console.error('Erro CSV vinculos:', err);
+    console.error('Erro XLSX vinculos:', err);
   }
 }
 
