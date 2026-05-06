@@ -626,7 +626,9 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
             <th onclick="srt(8)">CNES ↕</th>
             <th onclick="srt(1)">CPF ↕</th>
             <th onclick="srt(13)">Nome ↕</th>
+            <th onclick="srt(14)">Cód. CBO ↕</th>
             <th onclick="srt(3)">Ocupação (CBO) ↕</th>
+            <th onclick="srt(15)">Cód. Vinculação ↕</th>
             <th onclick="srt(4)">Tipo de Vínculo ↕</th>
             <th onclick="srt(2)">Sexo ↕</th>
             <th onclick="srt(10)">Escolaridade ↕</th>
@@ -909,7 +911,9 @@ async function loadTableData(pageNum = 1) {
       row.ds_escolaridade,  // 10
       row.ds_raca_cor,      // 11
       row.ds_cine,          // 12
-      row.nome              // 13
+      row.nome,             // 13
+      row.co_cbo_ocupacao,  // 14
+      row.nu_vinculacao     // 15
     ]);
     
     // Atualizar paginação
@@ -1944,12 +1948,14 @@ async function exportCSVVinculos() {
     // em Excel, LibreOffice e Google Sheets. padStart garante sempre 11 dígitos.
     const fmtTxt = (v, len) => `="` + String(v||'').padStart(len,'0') + `"`;
     const esc = v => `"${String(v).replace(/"/g,'""')}"`;
-    const headers = ['CNES','CPF','Nome','Ocupação (CBO)','Tipo de Vínculo','Sexo','Escolaridade','Formação (CINE)','C.H. Total','Operação','Sit. CNES'];
+    const headers = ['CNES','CPF','Nome','Cód. CBO','Ocupação (CBO)','Cód. Vinculação','Tipo de Vínculo','Sexo','Escolaridade','Formação (CINE)','C.H. Total','Operação','Sit. CNES'];
     const csvRows = rows.map(r => [
-      fmtTxt(r.co_cnes, 7),        // CNES como texto, sempre 7 dígitos
-      fmtTxt(r.nu_cpf, 11),        // CPF como texto, sempre 11 dígitos
+      fmtTxt(r.co_cnes, 7),         // CNES como texto, sempre 7 dígitos
+      fmtTxt(r.nu_cpf, 11),         // CPF como texto, sempre 11 dígitos
       esc(r.nome||''),
+      esc(r.co_cbo_ocupacao||''),
       esc(r.ds_cbo_ocupacao||''),
+      esc(r.nu_vinculacao||''),
       esc(r.vinculacao||''),
       esc(sexoL[r.co_sexo]||r.co_sexo||''),
       esc(r.ds_escolaridade||''),
@@ -2004,7 +2010,9 @@ function renderTable(){
       <td style="font-family:'JetBrains Mono',monospace;color:var(--muted)">${r[8]||''}</td>
       <td style="font-family:'JetBrains Mono',monospace;color:var(--muted);font-size:11px">${r[1]||''}</td>
       <td title="${r[13]||''}">${(r[13]||'').length>35?(r[13]||'').slice(0,33)+'…':r[13]||'—'}</td>
+      <td style="font-family:'JetBrains Mono',monospace;color:var(--muted);font-size:11px">${r[14]||'—'}</td>
       <td title="${r[3]||''}">${(r[3]||'').length>40?(r[3]||'').slice(0,38)+'…':r[3]||''}</td>
+      <td style="font-family:'JetBrains Mono',monospace;color:var(--muted);font-size:11px">${r[15]||'—'}</td>
       <td>${r[4]||''}</td>
       <td>${sexoLabel[r[2]]||r[2]||''}</td>
       <td style="color:var(--muted);font-size:11px">${r[10]||'—'}</td>

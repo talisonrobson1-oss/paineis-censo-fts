@@ -1163,7 +1163,9 @@ app.get('/api/vinculos/tabela', async (req, res) => {
           ds_escolaridade,
           ds_raca_cor,
           ds_cine,
-          nome
+          nome,
+          co_cbo_ocupacao,
+          nu_vinculacao
         FROM censo.recenseados_nova
         ${whereClause}
         ORDER BY ${dedupKey}
