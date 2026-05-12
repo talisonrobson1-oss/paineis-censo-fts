@@ -1104,84 +1104,195 @@ app.get('/api/vinculos/agregados', async (req, res) => {
 
 /**
  * GET /api/vinculos/tabela
+ * Retorna registros paginados de recenseados_nova + vínculos não alterados (espelho_cnes_nova).
+ * "Não alterados" = registros do espelho (min competência) sem correspondência em recenseados_nova.
+ * Filtros de localização/CBO/vínculo/estabelecimento aplicados ao espelho;
+ * demais filtros (sexo, raca, esc, cine, operacao) aplicados apenas ao recenseados.
+ * Quando operacao não inclui "Não alterado", o espelho é omitido da query (sem custo de NOT EXISTS).
  */
 app.get('/api/vinculos/tabela', async (req, res) => {
   try {
     const { page = 1, limit = 30, busca } = req.query;
     const offset = (page - 1) * limit;
 
-    // Usar helper para construir WHERE com todos os filtros
-    let { whereClause, params, paramCount } = buildVinculosWhere(req.query);
+    const allParams = [];
+    let paramCount  = 1;
 
-    // Busca textual (CBO, CNES)
+    // ── 0. Determinar includeEspelho ANTES de construir params (evita $N sem referência na query) ──
+    const opValsCheck  = normalizeArr(req.query.operacao);
+    const includeEspelho = opValsCheck.length === 0 || opValsCheck.some(v => v === 'Não alterado');
+
+    // ── 1. Condições do espelho_cnes_nova (SOMENTE se incluir espelho) ──
+    const espelhoConditions = [];
+    if (includeEspelho) {
+      const addEspelhoSubq = (col, val) => {
+        const vals = normalizeArr(val);
+        if (!vals.length) return;
+        if (vals.length === 1) {
+          espelhoConditions.push(`e.co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE ${col} = $${paramCount++})`);
+          allParams.push(vals[0]);
+        } else {
+          espelhoConditions.push(`e.co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE ${col} = ANY($${paramCount++}))`);
+          allParams.push(vals);
+        }
+      };
+      addEspelhoSubq('sg_uf',             req.query.uf);
+      addEspelhoSubq('no_macrorregional',  req.query.macro);
+      addEspelhoSubq('no_regional_saude',  req.query.regional);
+      addEspelhoSubq('no_municipio',       req.query.municipio);
+
+      const regioesDF_t = normalizeArr(req.query.regiao_saude_df);
+      if (regioesDF_t.length > 0) {
+        const allCnes = []; regioesDF_t.forEach(r => allCnes.push(...(dfRegionSaudeMap[r] || []).map(String)));
+        const uniqueCnes = [...new Set(allCnes)];
+        if (uniqueCnes.length > 0) { espelhoConditions.push(`e.co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE co_cnes::text = ANY($${paramCount++}))`); allParams.push(uniqueCnes); }
+      }
+      const regioesAdmDF_t = normalizeArr(req.query.regiao_adm_df);
+      if (regioesAdmDF_t.length > 0) {
+        const allCnes = []; regioesAdmDF_t.forEach(r => allCnes.push(...(dfRegionAdmMap[r] || []).map(String)));
+        const uniqueCnes = [...new Set(allCnes)];
+        if (uniqueCnes.length > 0) { espelhoConditions.push(`e.co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE co_cnes::text = ANY($${paramCount++}))`); allParams.push(uniqueCnes); }
+      }
+
+      const cboValsT = normalizeArr(req.query.cbo);
+      if (cboValsT.length > 0) {
+        if (cboValsT.length === 1) { espelhoConditions.push(`e.co_cbo::text = $${paramCount++}`); allParams.push(cboValsT[0]); }
+        else { espelhoConditions.push(`e.co_cbo::text = ANY($${paramCount++})`); allParams.push(cboValsT); }
+      }
+      const vinculoValsT = normalizeArr(req.query.vinculo);
+      if (vinculoValsT.length > 0) {
+        if (vinculoValsT.length === 1) { espelhoConditions.push(`e.ind_vinculacao::text = $${paramCount++}`); allParams.push(vinculoValsT[0]); }
+        else { espelhoConditions.push(`e.ind_vinculacao::text = ANY($${paramCount++})`); allParams.push(vinculoValsT); }
+      }
+      const estabValsT = normalizeArr(req.query.estabelecimento);
+      if (estabValsT.length > 0) {
+        if (estabValsT.length === 1) { espelhoConditions.push(`e.co_cnes = $${paramCount++}`); allParams.push(estabValsT[0]); }
+        else { espelhoConditions.push(`e.co_cnes = ANY($${paramCount++})`); allParams.push(estabValsT); }
+      }
+    }
+    const espelhoWhereExtra = espelhoConditions.length > 0 ? '\n          AND ' + espelhoConditions.join('\n          AND ') : '';
+
+    // ── 2. WHERE para recenseados_nova (todos os filtros via buildVinculosWhere) ──
+    let { whereClause: recWhere, params: recParams, paramCount: recEnd } = buildVinculosWhere(req.query, [], paramCount);
+    allParams.push(...recParams);
+    paramCount = recEnd;
+
+    // ── 3. Busca textual ──
+    let buscaCondEspelho = '';
     if (busca && busca.trim()) {
       const buscaParam = `%${busca.trim()}%`;
-      const buscaCond = `(ds_cbo_ocupacao ILIKE $${paramCount} OR co_cnes::text ILIKE $${paramCount} OR vinculacao ILIKE $${paramCount})`;
-      whereClause = whereClause ? whereClause + ` AND ${buscaCond}` : `WHERE ${buscaCond}`;
-      params.push(buscaParam);
+      const buscaCond  = `(ds_cbo_ocupacao ILIKE $${paramCount} OR co_cnes::text ILIKE $${paramCount} OR vinculacao ILIKE $${paramCount})`;
+      buscaCondEspelho = `AND (e.co_cbo::text ILIKE $${paramCount} OR e.co_cnes::text ILIKE $${paramCount} OR e.ind_vinculacao::text ILIKE $${paramCount})`;
+      recWhere = recWhere ? recWhere + ` AND ${buscaCond}` : `WHERE ${buscaCond}`;
+      allParams.push(buscaParam);
       paramCount++;
     }
 
-    console.log('📋 Tabela - WHERE:', whereClause);
-    console.log('📋 Tabela - Params:', params);
+    console.log('📋 Tabela - recWhere:', recWhere);
+    console.log('📋 Tabela - includeEspelho:', includeEspelho, '| espelhoExtra:', espelhoWhereExtra || '(none)');
 
-    // Chave de deduplicação: 8 campos que identificam um vínculo único
+    // ── 5. Chave de deduplicação para o lado recenseados ──
     const dedupKey = `nu_cpf, co_cnes, co_cbo_ocupacao, nu_vinculacao,
       COALESCE(qt_carga_horaria_ambulatorial::text, ''), COALESCE(qt_carga_horaria_hospitalar::text, ''),
       COALESCE(qt_carga_horaria_outros::text, ''), no_tipo_operacao_censo`;
 
-    // Query para contar total (deduplificado)
-    const countQuery = `
-      SELECT COUNT(*) as total
-      FROM (
-        SELECT DISTINCT ON (${dedupKey}) nu_cpf
-        FROM censo.recenseados_nova
-        ${whereClause}
-        ORDER BY ${dedupKey}
-      ) sub
-    `;
-
-    const { rows: [{ total }] } = await pool.query(countQuery, params);
-
-    // Query para dados paginados (deduplificado)
-    const dataQuery = `
-      SELECT *
-      FROM (
-        SELECT DISTINCT ON (${dedupKey})
-          SUBSTRING(nu_cpf, 8, 4) as cpf_ultimos_4,
+    // ── 6. Colunas de cada parte do UNION ALL ──
+    const recCols = `
+          SUBSTRING(nu_cpf, 8, 4)                            AS cpf_ultimos_4,
           nu_cpf,
           co_sexo,
           ds_cbo_ocupacao,
           vinculacao,
           COALESCE(qt_carga_horaria_ambulatorial, 0) +
-          COALESCE(qt_carga_horaria_hospitalar, 0) +
-          COALESCE(qt_carga_horaria_outros, 0) as carga_horaria_total,
+            COALESCE(qt_carga_horaria_hospitalar, 0) +
+            COALESCE(qt_carga_horaria_outros, 0)             AS carga_horaria_total,
           vl_remuneracao,
           no_tipo_operacao_censo,
-          co_cnes,
+          co_cnes::text                                      AS co_cnes,
           st_cnes,
           ds_escolaridade,
           ds_raca_cor,
           ds_cine,
           nome,
-          co_cbo_ocupacao,
-          nu_vinculacao
+          co_cbo_ocupacao::text                              AS co_cbo_ocupacao,
+          nu_vinculacao::text                                AS nu_vinculacao`;
+
+    const espelhoCols = `
+          SUBSTRING(LPAD(e.co_cpf::text, 11, '0'), 8, 4)    AS cpf_ultimos_4,
+          LPAD(e.co_cpf::text, 11, '0')                     AS nu_cpf,
+          NULL::text                                         AS co_sexo,
+          NULL::text                                         AS ds_cbo_ocupacao,
+          NULL::text                                         AS vinculacao,
+          COALESCE(e.qt_carga_horaria_ambulatorial::numeric, 0) +
+            COALESCE(e.qt_carga_hor_hosp_sus::numeric, 0) +
+            COALESCE(e.qt_carga_horaria_outros::numeric, 0) AS carga_horaria_total,
+          NULL::numeric                                      AS vl_remuneracao,
+          'Não alterado'::text                               AS no_tipo_operacao_censo,
+          e.co_cnes::text                                    AS co_cnes,
+          NULL::text                                         AS st_cnes,
+          NULL::text                                         AS ds_escolaridade,
+          NULL::text                                         AS ds_raca_cor,
+          NULL::text                                         AS ds_cine,
+          NULL::text                                         AS nome,
+          e.co_cbo::text                                    AS co_cbo_ocupacao,
+          e.ind_vinculacao::text                             AS nu_vinculacao`;
+
+    // ── 7. Montar CTEs e UNION ALL ──
+    const espelhoCtes = includeEspelho ? `
+      min_comp_cte AS (SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova),
+      espelho_min AS (
+        SELECT e.*
+        FROM censo.espelho_cnes_nova e
+        WHERE e.nu_comp = (SELECT nu_comp FROM min_comp_cte)${espelhoWhereExtra}
+      ),` : '';
+
+    const naoAlteradosPart = includeEspelho ? `
+      UNION ALL
+      SELECT ${espelhoCols}
+      FROM espelho_min e
+      WHERE NOT EXISTS (
+        SELECT 1 FROM censo.recenseados_nova v
+        WHERE v.nu_cpf                = e.co_cpf
+          AND v.co_cnes               = e.co_cnes
+          AND v.nu_vinculacao::text   = e.ind_vinculacao::text
+          AND v.co_cbo_ocupacao::text = e.co_cbo::text
+          AND COALESCE(v.qt_carga_horaria_ambulatorial::numeric, 0) = COALESCE(e.qt_carga_horaria_ambulatorial::numeric, 0)
+          AND COALESCE(v.qt_carga_horaria_hospitalar::numeric, 0)   = COALESCE(e.qt_carga_hor_hosp_sus::numeric, 0)
+          AND COALESCE(v.qt_carga_horaria_outros::numeric, 0)       = COALESCE(e.qt_carga_horaria_outros::numeric, 0)
+      )${buscaCondEspelho}` : '';
+
+    // Query única com window function para evitar double-scan do NOT EXISTS
+    const sql = `
+      WITH
+      ${espelhoCtes}
+      recenseados_dedup AS (
+        SELECT DISTINCT ON (${dedupKey}) ${recCols}
         FROM censo.recenseados_nova
-        ${whereClause}
+        ${recWhere}
         ORDER BY ${dedupKey}
-      ) t
+      ),
+      all_data AS (
+        SELECT * FROM recenseados_dedup
+        ${naoAlteradosPart}
+      )
+      SELECT *, COUNT(*) OVER() AS total_count
+      FROM all_data
       ORDER BY nu_cpf
       LIMIT $${paramCount} OFFSET $${paramCount + 1}
     `;
 
-    const { rows: data } = await pool.query(dataQuery, [...params, limit, offset]);
+    console.log('📋 Tabela SQL (primeiros 600 chars):', sql.substring(0, 600));
+
+    const { rows } = await pool.query(sql, [...allParams, limit, offset]);
+    const total = rows.length > 0 ? parseInt(rows[0].total_count) : 0;
+    const data  = rows.map(({ total_count, ...rest }) => rest);
 
     res.json({
       data,
       pagination: {
-        page: parseInt(page),
+        page:  parseInt(page),
         limit: parseInt(limit),
-        total: parseInt(total),
+        total,
         pages: Math.ceil(total / limit)
       }
     });
