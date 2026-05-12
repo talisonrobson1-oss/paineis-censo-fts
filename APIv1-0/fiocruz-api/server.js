@@ -1217,12 +1217,13 @@ app.get('/api/vinculos/tabela', async (req, res) => {
           co_cbo_ocupacao::text                              AS co_cbo_ocupacao,
           nu_vinculacao::text                                AS nu_vinculacao`;
 
+    // espelhoCols referencia aliases dos JOINs declarados em naoAlteradosPart
     const espelhoCols = `
           SUBSTRING(LPAD(e.co_cpf::text, 11, '0'), 8, 4)    AS cpf_ultimos_4,
           LPAD(e.co_cpf::text, 11, '0')                     AS nu_cpf,
-          NULL::text                                         AS co_sexo,
-          NULL::text                                         AS ds_cbo_ocupacao,
-          NULL::text                                         AS vinculacao,
+          cpf_info.co_sexo                                   AS co_sexo,
+          cbo_desc.ds_cbo_ocupacao                           AS ds_cbo_ocupacao,
+          vin_desc.vinculacao                                AS vinculacao,
           COALESCE(e.qt_carga_horaria_ambulatorial::numeric, 0) +
             COALESCE(e.qt_carga_hor_hosp_sus::numeric, 0) +
             COALESCE(e.qt_carga_horaria_outros::numeric, 0) AS carga_horaria_total,
@@ -1233,7 +1234,7 @@ app.get('/api/vinculos/tabela', async (req, res) => {
           NULL::text                                         AS ds_escolaridade,
           NULL::text                                         AS ds_raca_cor,
           NULL::text                                         AS ds_cine,
-          NULL::text                                         AS nome,
+          cpf_info.nome                                      AS nome,
           e.co_cbo::text                                    AS co_cbo_ocupacao,
           e.ind_vinculacao::text                             AS nu_vinculacao`;
 
@@ -1244,12 +1245,37 @@ app.get('/api/vinculos/tabela', async (req, res) => {
         SELECT e.*
         FROM censo.espelho_cnes_nova e
         WHERE e.nu_comp = (SELECT nu_comp FROM min_comp_cte)${espelhoWhereExtra}
+      ),
+      -- Lookups computados uma vez para enriquecer registros do espelho
+      cbo_desc_cte AS (
+        SELECT DISTINCT ON (co_cbo_ocupacao) co_cbo_ocupacao::text AS codigo, ds_cbo_ocupacao
+        FROM censo.recenseados_nova
+        WHERE co_cbo_ocupacao IS NOT NULL AND ds_cbo_ocupacao IS NOT NULL AND ds_cbo_ocupacao != ''
+        ORDER BY co_cbo_ocupacao
+      ),
+      vin_desc_cte AS (
+        SELECT DISTINCT ON (nu_vinculacao) nu_vinculacao::text AS codigo, vinculacao
+        FROM censo.recenseados_nova
+        WHERE nu_vinculacao IS NOT NULL AND vinculacao IS NOT NULL AND vinculacao != ''
+        ORDER BY nu_vinculacao
       ),` : '';
 
     const naoAlteradosPart = includeEspelho ? `
       UNION ALL
       SELECT ${espelhoCols}
       FROM espelho_min e
+      -- Nome e Sexo: qualquer vínculo recenseado com mesmo CPF (prioriza registros com nome)
+      LEFT JOIN LATERAL (
+        SELECT nome, co_sexo
+        FROM censo.recenseados_nova
+        WHERE nu_cpf = e.co_cpf
+        ORDER BY nome NULLS LAST
+        LIMIT 1
+      ) cpf_info ON TRUE
+      -- Descrição CBO: lookup por código (tabela computada uma vez)
+      LEFT JOIN cbo_desc_cte cbo_desc ON cbo_desc.codigo = e.co_cbo::text
+      -- Descrição Tipo Vínculo: lookup por código (tabela computada uma vez)
+      LEFT JOIN vin_desc_cte vin_desc ON vin_desc.codigo = e.ind_vinculacao::text
       WHERE NOT EXISTS (
         SELECT 1 FROM censo.recenseados_nova v
         WHERE v.nu_cpf                = e.co_cpf
