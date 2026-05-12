@@ -1268,25 +1268,27 @@ async function reloadWithFilters() {
     console.log('🔗 Query string:', queryString || '(nenhum filtro)');
     console.log('📡 Carregando dados filtrados...');
     
-    // Recarregar dados agregados e stats
-    const [statsRes, agregadosRes] = await Promise.all([
+    // Recarregar dados agregados, stats e não-alterados
+    const [statsRes, agregadosRes, naoAlteradosRes] = await Promise.all([
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_STATS + urlSuffix),
-      apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_AGREGADOS + urlSuffix)
+      apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_AGREGADOS + urlSuffix),
+      apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_NAO_ALTERADOS + urlSuffix)
     ]);
-    
+
     if (!statsRes.success) {
       console.error('❌ Erro ao carregar stats:', statsRes.error);
       throw new Error('Erro ao carregar estatísticas');
     }
-    
+
     if (!agregadosRes.success) {
       console.error('❌ Erro ao carregar agregados:', agregadosRes.error);
       throw new Error('Erro ao carregar dados agregados');
     }
-    
+
     console.log('✅ Stats recebidos:', statsRes.data);
     console.log('✅ Agregados recebidos:', agregadosRes.data);
-    
+    console.log('✅ Não-alterados recebidos:', naoAlteradosRes?.data);
+
     if (statsRes.success) {
       D.stats = statsRes.data;
     }
@@ -1321,13 +1323,19 @@ async function reloadWithFilters() {
       data.expectativa.forEach(r => { D.expectativa[r.expectativa] = parseInt(r.n); });
     }
     
+    // Atualizar dados de não-alterados
+    if (naoAlteradosRes && naoAlteradosRes.success) {
+      D.naoAlterados = naoAlteradosRes.data;
+    }
+
     // Atualizar UI
     console.log('🎨 Atualizando KPIs e gráficos...');
     updateKPIs();
     renderCharts();
-    
+    if (D.naoAlterados) renderNaoAlterados();
+
     hideLoading();
-    
+
     console.log('✅ Dados atualizados com filtros aplicados!');
     
   } catch (error) {

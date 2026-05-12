@@ -89,10 +89,11 @@ async function fetchWithRetry(url, options = {}, retries = API_CONFIG.MAX_RETRIE
  */
 // Timeouts específicos por endpoint (ms). Endpoints pesados recebem mais tempo.
 const ENDPOINT_TIMEOUTS = {
-  '/api/resolucao/agregados': 300000, // 5 min — 5 queries sequenciais + 2 com fallback
-  '/api/resolucao/stats':     180000, // 3 min — 5 queries sequenciais
-  '/api/resolucao/tabela':    120000,
-  '/api/vinculos/agregados':  180000,
+  '/api/resolucao/agregados':      300000, // 5 min — 5 queries sequenciais + 2 com fallback
+  '/api/resolucao/stats':          180000, // 3 min — 5 queries sequenciais
+  '/api/resolucao/tabela':         120000,
+  '/api/vinculos/agregados':       180000,
+  '/api/vinculos/nao-alterados':   180000, // 3 min — NOT EXISTS sobre espelho completo
   '/api/estabelecimentos/por-municipio': 60000,
 };
 

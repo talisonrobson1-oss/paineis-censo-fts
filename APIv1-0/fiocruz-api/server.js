@@ -661,10 +661,10 @@ app.get('/api/estabelecimentos/filtros-df', (req, res) => {
 /**
  * Helper: Construir WHERE clause para vínculos
  */
-function buildVinculosWhere(query, additionalConditions = []) {
+function buildVinculosWhere(query, additionalConditions = [], startParamCount = 1) {
   const conditions = [...additionalConditions];
   const params = [];
-  let paramCount = 1;
+  let paramCount = startParamCount;
 
   console.log('🔍 buildVinculosWhere recebeu:', query);
 
@@ -1306,11 +1306,167 @@ app.get('/api/vinculos/filtros', async (req, res) => {
  * GET /api/vinculos/nao-alterados
  * Retorna análise de vínculos não alterados pelo projeto (comparação com espelho CNES)
  * Usa a menor competência disponível em censo.espelho_cnes_nova dinamicamente.
+ * Suporta os mesmos filtros de /api/vinculos/stats:
+ *   uf, macro, regional, municipio, regiao_saude_df, regiao_adm_df, estabelecimento,
+ *   cbo, vinculo  → aplicados ao espelho_cnes_nova
+ *   sexo, escolaridade, raca, cine, operacao → aplicados apenas ao lado recenseados_nova
  */
 app.get('/api/vinculos/nao-alterados', async (req, res) => {
   try {
-    // CTE único: min_comp + total_espelho + total_recenseados + nao_alterados (1 round-trip)
-    const { rows } = await pool.query(`
+    const allParams = [];
+    let paramCount  = 1;
+
+    // ── 1. Condições para espelho_cnes_nova (localização + CBO + vínculo + estabelecimento) ──
+    const espelhoConditions = [];
+
+    const addEspelhoSubq = (col, val) => {
+      const vals = normalizeArr(val);
+      if (!vals.length) return;
+      if (vals.length === 1) {
+        espelhoConditions.push(`e.co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE ${col} = $${paramCount++})`);
+        allParams.push(vals[0]);
+      } else {
+        espelhoConditions.push(`e.co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE ${col} = ANY($${paramCount++}))`);
+        allParams.push(vals);
+      }
+    };
+
+    addEspelhoSubq('sg_uf',             req.query.uf);
+    addEspelhoSubq('no_macrorregional',  req.query.macro);
+    addEspelhoSubq('no_regional_saude',  req.query.regional);
+    addEspelhoSubq('no_municipio',       req.query.municipio);
+
+    // Regiões de Saúde DF
+    const regioesDF = normalizeArr(req.query.regiao_saude_df);
+    if (regioesDF.length > 0) {
+      const allCnes = [];
+      regioesDF.forEach(r => allCnes.push(...(dfRegionSaudeMap[r] || []).map(String)));
+      const uniqueCnes = [...new Set(allCnes)];
+      if (uniqueCnes.length > 0) {
+        espelhoConditions.push(`e.co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE co_cnes::text = ANY($${paramCount++}))`);
+        allParams.push(uniqueCnes);
+      }
+    }
+    // Regiões Administrativas DF
+    const regioesAdmDF = normalizeArr(req.query.regiao_adm_df);
+    if (regioesAdmDF.length > 0) {
+      const allCnes = [];
+      regioesAdmDF.forEach(r => allCnes.push(...(dfRegionAdmMap[r] || []).map(String)));
+      const uniqueCnes = [...new Set(allCnes)];
+      if (uniqueCnes.length > 0) {
+        espelhoConditions.push(`e.co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE co_cnes::text = ANY($${paramCount++}))`);
+        allParams.push(uniqueCnes);
+      }
+    }
+
+    // CBO → espelho usa coluna co_cbo
+    const cboValsE = normalizeArr(req.query.cbo);
+    if (cboValsE.length > 0) {
+      if (cboValsE.length === 1) {
+        espelhoConditions.push(`e.co_cbo::text = $${paramCount++}`);
+        allParams.push(cboValsE[0]);
+      } else {
+        espelhoConditions.push(`e.co_cbo::text = ANY($${paramCount++})`);
+        allParams.push(cboValsE);
+      }
+    }
+
+    // Vínculo → espelho usa coluna ind_vinculacao
+    const vinculoValsE = normalizeArr(req.query.vinculo);
+    if (vinculoValsE.length > 0) {
+      if (vinculoValsE.length === 1) {
+        espelhoConditions.push(`e.ind_vinculacao::text = $${paramCount++}`);
+        allParams.push(vinculoValsE[0]);
+      } else {
+        espelhoConditions.push(`e.ind_vinculacao::text = ANY($${paramCount++})`);
+        allParams.push(vinculoValsE);
+      }
+    }
+
+    // Estabelecimento
+    const estabValsE = normalizeArr(req.query.estabelecimento);
+    if (estabValsE.length > 0) {
+      if (estabValsE.length === 1) {
+        espelhoConditions.push(`e.co_cnes = $${paramCount++}`);
+        allParams.push(estabValsE[0]);
+      } else {
+        espelhoConditions.push(`e.co_cnes = ANY($${paramCount++})`);
+        allParams.push(estabValsE);
+      }
+    }
+
+    const espelhoWhereExtra = espelhoConditions.length > 0
+      ? '\n        AND ' + espelhoConditions.join('\n        AND ')
+      : '';
+
+    // ── 2. Filtros exclusivos de recenseados_nova no NOT EXISTS (sexo, raca, esc, cine, op) ──
+    const vConditions = [];
+
+    // Sexo (sem parâmetro — inline)
+    const sexoValsV = normalizeArr(req.query.sexo);
+    if (sexoValsV.length > 0) {
+      const masc = sexoValsV.some(v => v === 'M' || v === 'Masculino');
+      const fem  = sexoValsV.some(v => v === 'F' || v === 'Feminino');
+      if (masc && !fem)      vConditions.push(`v.co_sexo IN ('M', '1')`);
+      else if (fem && !masc) vConditions.push(`v.co_sexo IN ('F', '2')`);
+    }
+
+    // Escolaridade
+    const escValsV = normalizeArr(req.query.escolaridade);
+    if (escValsV.length > 0) {
+      if (escValsV.length === 1) {
+        vConditions.push(`(v.co_escolaridade::text = $${paramCount} OR v.ds_escolaridade = $${paramCount})`);
+        allParams.push(escValsV[0]); paramCount++;
+      } else {
+        vConditions.push(`(v.co_escolaridade::text = ANY($${paramCount}) OR v.ds_escolaridade = ANY($${paramCount}))`);
+        allParams.push(escValsV); paramCount++;
+      }
+    }
+
+    // Raça/Cor
+    const racaValsV = normalizeArr(req.query.raca);
+    if (racaValsV.length > 0) {
+      const semInfo = racaValsV.includes('Sem informação');
+      const outros  = racaValsV.filter(v => v !== 'Sem informação');
+      if (semInfo && outros.length === 0) {
+        vConditions.push(`(v.ds_raca_cor IS NULL OR v.ds_raca_cor = '' OR UPPER(v.ds_raca_cor) = 'SEM INFORMACAO')`);
+      } else if (!semInfo && outros.length > 0) {
+        if (outros.length === 1) { vConditions.push(`v.ds_raca_cor = $${paramCount++}`);          allParams.push(outros[0]); }
+        else                     { vConditions.push(`v.ds_raca_cor = ANY($${paramCount++})`);      allParams.push(outros); }
+      } else if (semInfo && outros.length > 0) {
+        if (outros.length === 1) { vConditions.push(`(v.ds_raca_cor IS NULL OR v.ds_raca_cor = '' OR UPPER(v.ds_raca_cor) = 'SEM INFORMACAO' OR v.ds_raca_cor = $${paramCount++})`);      allParams.push(outros[0]); }
+        else                     { vConditions.push(`(v.ds_raca_cor IS NULL OR v.ds_raca_cor = '' OR UPPER(v.ds_raca_cor) = 'SEM INFORMACAO' OR v.ds_raca_cor = ANY($${paramCount++}))`); allParams.push(outros); }
+      }
+    }
+
+    // CINE
+    const cineValsV = normalizeArr(req.query.cine);
+    if (cineValsV.length > 0) {
+      if (cineValsV.length === 1) {
+        vConditions.push(`(v.co_cine = $${paramCount} OR v.ds_cine = $${paramCount})`);
+        allParams.push(cineValsV[0]); paramCount++;
+      } else {
+        vConditions.push(`(v.co_cine = ANY($${paramCount}) OR v.ds_cine = ANY($${paramCount}))`);
+        allParams.push(cineValsV); paramCount++;
+      }
+    }
+
+    // Tipo de Operação
+    const opValsV = normalizeArr(req.query.operacao);
+    if (opValsV.length > 0) {
+      if (opValsV.length === 1) { vConditions.push(`v.no_tipo_operacao_censo = $${paramCount++}`); allParams.push(opValsV[0]); }
+      else                      { vConditions.push(`v.no_tipo_operacao_censo = ANY($${paramCount++})`); allParams.push(opValsV); }
+    }
+
+    const vWhereExtra = vConditions.length > 0
+      ? '\n              AND ' + vConditions.join('\n              AND ')
+      : '';
+
+    // ── 3. WHERE para total_rec usando buildVinculosWhere (todos os filtros) ──
+    const { whereClause: recWhere, params: recParams } = buildVinculosWhere(req.query, [], paramCount);
+    const finalParams = [...allParams, ...recParams];
+
+    const sql = `
       WITH
       min_comp_cte AS (
         SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova
@@ -1318,7 +1474,7 @@ app.get('/api/vinculos/nao-alterados', async (req, res) => {
       espelho_min AS (
         SELECT e.*
         FROM censo.espelho_cnes_nova e
-        WHERE e.nu_comp = (SELECT nu_comp FROM min_comp_cte)
+        WHERE e.nu_comp = (SELECT nu_comp FROM min_comp_cte)${espelhoWhereExtra}
       ),
       nao_alt_cte AS (
         SELECT COUNT(*) AS n
@@ -1331,16 +1487,18 @@ app.get('/api/vinculos/nao-alterados', async (req, res) => {
             AND v.co_cbo_ocupacao::text = e.co_cbo::text
             AND COALESCE(v.qt_carga_horaria_ambulatorial::numeric, 0) = COALESCE(e.qt_carga_horaria_ambulatorial::numeric, 0)
             AND COALESCE(v.qt_carga_horaria_hospitalar::numeric, 0)   = COALESCE(e.qt_carga_hor_hosp_sus::numeric, 0)
-            AND COALESCE(v.qt_carga_horaria_outros::numeric, 0)       = COALESCE(e.qt_carga_horaria_outros::numeric, 0)
+            AND COALESCE(v.qt_carga_horaria_outros::numeric, 0)       = COALESCE(e.qt_carga_horaria_outros::numeric, 0)${vWhereExtra}
         )
       ),
-      total_rec AS (SELECT COUNT(*) AS n FROM censo.recenseados_nova)
+      total_rec AS (SELECT COUNT(*) AS n FROM censo.recenseados_nova ${recWhere})
       SELECT
         (SELECT nu_comp FROM min_comp_cte) AS nu_comp,
         (SELECT COUNT(*) FROM espelho_min) AS total_espelho,
         (SELECT n FROM total_rec)          AS total_vinculos_recenseados,
         (SELECT n FROM nao_alt_cte)        AS nao_alterados
-    `);
+    `;
+
+    const { rows } = await pool.query(sql, finalParams);
 
     const compStr  = String(rows[0].nu_comp);
     const mesesNome = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
