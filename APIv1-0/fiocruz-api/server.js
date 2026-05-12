@@ -56,8 +56,8 @@ const pool = new Pool({
   max: 10, // Limitar a 10 conexões simultâneas (banco remoto não suporta rajadas maiores)
   idleTimeoutMillis: 60000,
   connectionTimeoutMillis: 60000, // Aumentado para 60s
-  query_timeout: 120000, // Aumentado para 120s (2 minutos)
-  statement_timeout: 120000, // Timeout de statement
+  query_timeout: 600000, // 10 min — suporta exportação completa da tabela de vínculos
+  statement_timeout: 600000, // 10 min
   keepAlive: true,
   keepAliveInitialDelayMillis: 10000
 });
@@ -1246,7 +1246,13 @@ app.get('/api/vinculos/tabela', async (req, res) => {
         FROM censo.espelho_cnes_nova e
         WHERE e.nu_comp = (SELECT nu_comp FROM min_comp_cte)${espelhoWhereExtra}
       ),
-      -- Lookups computados uma vez para enriquecer registros do espelho
+      -- Lookups computados UMA VEZ para enriquecer registros do espelho (evita LATERAL por linha)
+      cpf_lookup_cte AS (
+        SELECT DISTINCT ON (nu_cpf) nu_cpf, nome, co_sexo
+        FROM censo.recenseados_nova
+        WHERE nu_cpf IS NOT NULL
+        ORDER BY nu_cpf, nome NULLS LAST
+      ),
       cbo_desc_cte AS (
         SELECT DISTINCT ON (co_cbo_ocupacao) co_cbo_ocupacao::text AS codigo, ds_cbo_ocupacao
         FROM censo.recenseados_nova
@@ -1264,17 +1270,10 @@ app.get('/api/vinculos/tabela', async (req, res) => {
       UNION ALL
       SELECT ${espelhoCols}
       FROM espelho_min e
-      -- Nome e Sexo: qualquer vínculo recenseado com mesmo CPF (prioriza registros com nome)
-      LEFT JOIN LATERAL (
-        SELECT nome, co_sexo
-        FROM censo.recenseados_nova
-        WHERE nu_cpf = e.co_cpf
-        ORDER BY nome NULLS LAST
-        LIMIT 1
-      ) cpf_info ON TRUE
-      -- Descrição CBO: lookup por código (tabela computada uma vez)
+      -- Nome e Sexo: lookup por CPF via CTE (hash join, eficiente para exportações grandes)
+      LEFT JOIN cpf_lookup_cte cpf_info ON cpf_info.nu_cpf = e.co_cpf
+      -- Descrição CBO e Vínculo: lookups por código via CTE
       LEFT JOIN cbo_desc_cte cbo_desc ON cbo_desc.codigo = e.co_cbo::text
-      -- Descrição Tipo Vínculo: lookup por código (tabela computada uma vez)
       LEFT JOIN vin_desc_cte vin_desc ON vin_desc.codigo = e.ind_vinculacao::text
       WHERE NOT EXISTS (
         SELECT 1 FROM censo.recenseados_nova v

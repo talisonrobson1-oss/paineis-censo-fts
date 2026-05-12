@@ -94,6 +94,7 @@ const ENDPOINT_TIMEOUTS = {
   '/api/resolucao/tabela':         120000,
   '/api/vinculos/agregados':       180000,
   '/api/vinculos/nao-alterados':   180000, // 3 min — NOT EXISTS sobre espelho completo
+  '/api/vinculos/tabela':          600000, // 10 min — exportação de até 256k linhas (rec + espelho)
   '/api/estabelecimentos/por-municipio': 60000,
 };
 
