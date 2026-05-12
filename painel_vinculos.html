@@ -619,7 +619,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
       <h3>Vínculos <span id="tbl-count" style="color:var(--text);font-family:'JetBrains Mono',monospace;font-size:11px;margin-left:8px"></span></h3>
       <div style="display:flex;gap:8px;align-items:center;">
         <input class="search-inp" id="tbl-search" placeholder="Buscar por CBO, vínculo, CNES…" oninput="searchVinculos()">
-        <button class="btn-export" onclick="exportCSVVinculos()" title="Exportar registros filtrados">↓ XLSX</button>
+        <button class="btn-export" onclick="exportCSVVinculos()" title="Exportar registros filtrados (CSV — abre no Excel)">↓ CSV</button>
       </div>
     </div>
     <div class="tbl-scroll">
@@ -1922,30 +1922,35 @@ function searchVinculos() {
 }
 
 // ==========================================
-// EXPORTAR XLSX — VÍNCULOS (chunked + sheet incremental)
+// EXPORTAR CSV — VÍNCULOS (chunked, compatível Excel)
 // ==========================================
 async function exportCSVVinculos() {
   const CHUNK = 10000;
   const sexoL = {'M':'Masculino','F':'Feminino','1':'Masculino','2':'Feminino'};
-  const S = v => ({ t: 's', v: String(v ?? '') });
-  const N = v => ({ t: 'n', v: v != null ? Number(v) : 0 });
 
-  // Converte uma linha do resultado em linha XLSX
-  const toRow = r => [
-    S(String(r.co_cnes || '').padStart(7,  '0')),
-    S(String(r.nu_cpf  || '').padStart(11, '0')),
-    S(r.nome || ''),
-    S(String(r.co_cbo_ocupacao || '')),
-    S(r.ds_cbo_ocupacao || ''),
-    S(String(r.nu_vinculacao || '')),
-    S(r.vinculacao || ''),
-    S(sexoL[r.co_sexo] || r.co_sexo || ''),
-    S(r.ds_escolaridade || ''),
-    S(r.ds_cine || ''),
-    N(r.carga_horaria_total),
-    S(r.no_tipo_operacao_censo || ''),
-    S(r.st_cnes || '')
-  ];
+  // Escapa campo CSV (RFC 4180)
+  const esc = v => {
+    const s = String(v ?? '');
+    return (s.includes(',') || s.includes('"') || s.includes('\n'))
+      ? '"' + s.replace(/""/g, '""') + '"'
+      : s;
+  };
+
+  const toCSVRow = r => [
+    String(r.co_cnes || '').padStart(7,  '0'),
+    String(r.nu_cpf  || '').padStart(11, '0'),
+    r.nome || '',
+    String(r.co_cbo_ocupacao || ''),
+    r.ds_cbo_ocupacao || '',
+    String(r.nu_vinculacao || ''),
+    r.vinculacao || '',
+    sexoL[r.co_sexo] || r.co_sexo || '',
+    r.ds_escolaridade || '',
+    r.ds_cine || '',
+    r.carga_horaria_total != null ? Number(r.carga_horaria_total) : 0,
+    r.no_tipo_operacao_censo || '',
+    r.st_cnes || ''
+  ].map(esc).join(',');
 
   try {
     showLoading('Exportando… buscando página 1');
@@ -1969,7 +1974,7 @@ async function exportCSVVinculos() {
     if (hasVal(activeFilters.regiao_saude_df)) baseFilters.regiao_saude_df  = activeFilters.regiao_saude_df;
     if (hasVal(activeFilters.regiao_adm_df))   baseFilters.regiao_adm_df   = activeFilters.regiao_adm_df;
 
-    // ── 1ª página: descobre o total e inicia a planilha ──
+    // ── 1ª página: descobre o total ──
     const first = await apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_TABELA,
                                    { ...baseFilters, page: 1, limit: CHUNK });
     if (!first.success) { hideLoading(); alert('Erro ao exportar: ' + first.error); return; }
@@ -1981,41 +1986,31 @@ async function exportCSVVinculos() {
                      'Cód. Vinculação','Tipo de Vínculo','Sexo',
                      'Escolaridade','Formação (CINE)','C.H. Total','Operação','Sit. CNES'];
 
-    // Cria planilha apenas com o cabeçalho
-    const ws = XLSX.utils.aoa_to_sheet([headers]);
-    let nextRow = 1; // próxima linha disponível (0 = cabeçalho)
+    // Cada chunk vira uma string CSV de ~2 MB; o Blob monta sem duplicar memória
+    const blobParts = ['﻿' + headers.map(esc).join(',') + '\r\n'];
 
-    // Adiciona 1ª página à planilha
-    const firstRows = first.data.data.map(toRow);
-    XLSX.utils.sheet_add_aoa(ws, firstRows, { origin: { r: nextRow, c: 0 } });
-    nextRow += firstRows.length;
+    // Adiciona 1ª página
+    blobParts.push(first.data.data.map(toCSVRow).join('\r\n') + '\r\n');
+    let fetched = first.data.data.length;
 
-    // ── páginas seguintes: adiciona cada chunk diretamente à planilha ──
+    // ── páginas seguintes ──
     for (let p = 2; p <= pages; p++) {
-      showLoading('Exportando… ' + nextRow.toLocaleString('pt-BR') + ' / ' + total.toLocaleString('pt-BR') + ' registros');
+      showLoading('Exportando… ' + fetched.toLocaleString('pt-BR') + ' / ' + total.toLocaleString('pt-BR') + ' registros');
       const res = await apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_TABELA,
                                    { ...baseFilters, page: p, limit: CHUNK });
       if (!res.success) { hideLoading(); alert('Erro ao exportar (pág. ' + p + '): ' + res.error); return; }
-      const chunkRows = res.data.data.map(toRow);
-      XLSX.utils.sheet_add_aoa(ws, chunkRows, { origin: { r: nextRow, c: 0 } });
-      nextRow += chunkRows.length;
+      blobParts.push(res.data.data.map(toCSVRow).join('\r\n') + '\r\n');
+      fetched += res.data.data.length;
     }
 
-    // Ajusta o intervalo da planilha e larguras de colunas
-    ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: nextRow - 1, c: headers.length - 1 } });
-    ws['!cols'] = [{wch:10},{wch:14},{wch:35},{wch:10},{wch:40},{wch:14},{wch:45},{wch:12},{wch:20},{wch:25},{wch:10},{wch:12},{wch:10}];
+    showLoading('Gerando arquivo com ' + fetched.toLocaleString('pt-BR') + ' registros…');
 
-    showLoading('Gerando arquivo XLSX com ' + (nextRow - 1).toLocaleString('pt-BR') + ' registros…');
-
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Vínculos');
-
-    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    const blob  = new Blob([wbout], { type: 'application/octet-stream' });
+    // Blob com UTF-8 BOM — Excel abre com encoding correto
+    const blob  = new Blob(blobParts, { type: 'text/csv;charset=utf-8;' });
     const url   = URL.createObjectURL(blob);
     const a     = document.createElement('a');
     a.href      = url;
-    a.download  = 'vinculos_' + new Date().toISOString().slice(0,10) + '.xlsx';
+    a.download  = 'vinculos_' + new Date().toISOString().slice(0,10) + '.csv';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -2024,9 +2019,10 @@ async function exportCSVVinculos() {
   } catch(err) {
     hideLoading();
     alert('Erro ao exportar: ' + err.message);
-    console.error('Erro XLSX vinculos:', err);
+    console.error('Erro CSV vinculos:', err);
   }
 }
+
 
 // ==========================================
 // TABELA
