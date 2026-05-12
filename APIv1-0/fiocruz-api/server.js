@@ -10,7 +10,6 @@
  */
 
 const express = require('express');
-const compression = require('compression');
 const cors = require('cors');
 const { Pool } = require('pg');
 const fs   = require('fs');
@@ -82,7 +81,6 @@ setInterval(() => {
 }, 30000); // A cada 30 segundos
 
 // Middlewares
-app.use(compression()); // gzip — reduz ~90% o payload de respostas JSON grandes
 app.use(cors());
 app.use(express.json());
 
