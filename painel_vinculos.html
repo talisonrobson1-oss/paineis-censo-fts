@@ -1922,13 +1922,30 @@ function searchVinculos() {
 }
 
 // ==========================================
-// EXPORTAR XLSX — VÍNCULOS (chunked)
+// EXPORTAR XLSX — VÍNCULOS (chunked + sheet incremental)
 // ==========================================
 async function exportCSVVinculos() {
-  const CHUNK = 10000; // linhas por requisição — ~4 MB cada, bem abaixo do timeout do Render
+  const CHUNK = 10000;
   const sexoL = {'M':'Masculino','F':'Feminino','1':'Masculino','2':'Feminino'};
   const S = v => ({ t: 's', v: String(v ?? '') });
   const N = v => ({ t: 'n', v: v != null ? Number(v) : 0 });
+
+  // Converte uma linha do resultado em linha XLSX
+  const toRow = r => [
+    S(String(r.co_cnes || '').padStart(7,  '0')),
+    S(String(r.nu_cpf  || '').padStart(11, '0')),
+    S(r.nome || ''),
+    S(String(r.co_cbo_ocupacao || '')),
+    S(r.ds_cbo_ocupacao || ''),
+    S(String(r.nu_vinculacao || '')),
+    S(r.vinculacao || ''),
+    S(sexoL[r.co_sexo] || r.co_sexo || ''),
+    S(r.ds_escolaridade || ''),
+    S(r.ds_cine || ''),
+    N(r.carga_horaria_total),
+    S(r.no_tipo_operacao_censo || ''),
+    S(r.st_cnes || '')
+  ];
 
   try {
     showLoading('Exportando… buscando página 1');
@@ -1936,7 +1953,6 @@ async function exportCSVVinculos() {
     const busca = document.getElementById('tbl-search')?.value || '';
     const hasVal = v => Array.isArray(v) ? v.length > 0 : !!v;
 
-    // Monta objeto de filtros base (sem page/limit)
     const baseFilters = { busca };
     if (hasVal(activeFilters.op))              baseFilters.operacao         = activeFilters.op;
     if (hasVal(activeFilters.sexo))            baseFilters.sexo             = activeFilters.sexo;
@@ -1953,47 +1969,43 @@ async function exportCSVVinculos() {
     if (hasVal(activeFilters.regiao_saude_df)) baseFilters.regiao_saude_df  = activeFilters.regiao_saude_df;
     if (hasVal(activeFilters.regiao_adm_df))   baseFilters.regiao_adm_df   = activeFilters.regiao_adm_df;
 
-    // ── 1ª página: descobre o total ──
+    // ── 1ª página: descobre o total e inicia a planilha ──
     const first = await apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_TABELA,
                                    { ...baseFilters, page: 1, limit: CHUNK });
     if (!first.success) { hideLoading(); alert('Erro ao exportar: ' + first.error); return; }
 
-    const total  = first.data.pagination.total;
-    const pages  = Math.ceil(total / CHUNK);
-    let allRows  = [...first.data.data];
+    const total = first.data.pagination.total;
+    const pages = Math.ceil(total / CHUNK);
 
-    // ── páginas seguintes ──
+    const headers = ['CNES','CPF','Nome','Cód. CBO','Ocupação (CBO)',
+                     'Cód. Vinculação','Tipo de Vínculo','Sexo',
+                     'Escolaridade','Formação (CINE)','C.H. Total','Operação','Sit. CNES'];
+
+    // Cria planilha apenas com o cabeçalho
+    const ws = XLSX.utils.aoa_to_sheet([headers]);
+    let nextRow = 1; // próxima linha disponível (0 = cabeçalho)
+
+    // Adiciona 1ª página à planilha
+    const firstRows = first.data.data.map(toRow);
+    XLSX.utils.sheet_add_aoa(ws, firstRows, { origin: { r: nextRow, c: 0 } });
+    nextRow += firstRows.length;
+
+    // ── páginas seguintes: adiciona cada chunk diretamente à planilha ──
     for (let p = 2; p <= pages; p++) {
-      showLoading(`Exportando… ${allRows.length.toLocaleString('pt-BR')} / ${total.toLocaleString('pt-BR')} registros`);
+      showLoading('Exportando… ' + nextRow.toLocaleString('pt-BR') + ' / ' + total.toLocaleString('pt-BR') + ' registros');
       const res = await apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_TABELA,
                                    { ...baseFilters, page: p, limit: CHUNK });
       if (!res.success) { hideLoading(); alert('Erro ao exportar (pág. ' + p + '): ' + res.error); return; }
-      allRows = allRows.concat(res.data.data);
+      const chunkRows = res.data.data.map(toRow);
+      XLSX.utils.sheet_add_aoa(ws, chunkRows, { origin: { r: nextRow, c: 0 } });
+      nextRow += chunkRows.length;
     }
 
-    // ── monta XLSX ──
-    showLoading(`Gerando arquivo XLSX com ${allRows.length.toLocaleString('pt-BR')} registros…`);
-
-    const headers = ['CNES','CPF','Nome','Cód. CBO','Ocupação (CBO)','Cód. Vinculação','Tipo de Vínculo','Sexo','Escolaridade','Formação (CINE)','C.H. Total','Operação','Sit. CNES'];
-
-    const dataRows = allRows.map(r => [
-      S(String(r.co_cnes || '').padStart(7,  '0')),
-      S(String(r.nu_cpf  || '').padStart(11, '0')),
-      S(r.nome || ''),
-      S(String(r.co_cbo_ocupacao || '')),
-      S(r.ds_cbo_ocupacao || ''),
-      S(String(r.nu_vinculacao || '')),
-      S(r.vinculacao || ''),
-      S(sexoL[r.co_sexo] || r.co_sexo || ''),
-      S(r.ds_escolaridade || ''),
-      S(r.ds_cine || ''),
-      N(r.carga_horaria_total),
-      S(r.no_tipo_operacao_censo || ''),
-      S(r.st_cnes || '')
-    ]);
-
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+    // Ajusta o intervalo da planilha e larguras de colunas
+    ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: nextRow - 1, c: headers.length - 1 } });
     ws['!cols'] = [{wch:10},{wch:14},{wch:35},{wch:10},{wch:40},{wch:14},{wch:45},{wch:12},{wch:20},{wch:25},{wch:10},{wch:12},{wch:10}];
+
+    showLoading('Gerando arquivo XLSX com ' + (nextRow - 1).toLocaleString('pt-BR') + ' registros…');
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Vínculos');
