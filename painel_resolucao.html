@@ -374,6 +374,7 @@ tr:hover{background:var(--surface2);}
 
   <!-- Ações -->
   <div style="display:flex;flex-direction:column;gap:8px;align-self:flex-end;padding-bottom:8px;">
+    <button id="btn-consultar" class="btn btn-primary" onclick="consultarDados()">🔍 Consultar</button>
     <button class="btn" onclick="resetFilters()">↺ Limpar Filtros</button>
   </div>
 </div>
@@ -594,12 +595,6 @@ function onPeriodoChange() {
   activeFilters.periodo_inicio = document.getElementById('f-periodo-inicio').value || '';
   activeFilters.periodo_fim    = document.getElementById('f-periodo-fim').value    || '';
   updateResFilterBadge();
-  clearTimeout(_periodoDebounce);
-  _periodoDebounce = setTimeout(async () => {
-    await reloadWithFilters();
-    await loadTableData(1);
-    await loadEstabsPendentes();
-  }, 600);
 }
 
 // ==========================================
@@ -1054,6 +1049,21 @@ function populateSelectMergedRes(id, standardItems, dfItems, selectedUF, flatSor
   }
 }
 
+// ==========================================
+// CONSULTAR DADOS (acionamento manual)
+// ==========================================
+async function consultarDados() {
+  const btn = document.getElementById('btn-consultar');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Consultando...'; }
+  try {
+    await reloadWithFilters();
+    await loadTableData(1);
+    await loadEstabsPendentes();
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔍 Consultar'; }
+  }
+}
+
 function initSelect2SingleRes($sel) {
   $sel.select2({
     multiple: true,
@@ -1109,11 +1119,6 @@ function initializeSelect2() {
             if (ufVals.length) setTimeout(() => $('#f-uf').val(ufVals).trigger('change.select2'), 50);
           }
           updateResFilterBadge();
-          if (filterDebounce) clearTimeout(filterDebounce);
-          filterDebounce = setTimeout(async () => {
-            await reloadWithFilters();
-            await loadTableData(1);
-          }, 400);
         });
       }
     }
@@ -1151,13 +1156,6 @@ function initializePainel() {
         updateResFilterBadge();
 
         console.log(`🔄 Filtro ${id} alterado para:`, vals);
-
-        // Debounce: aguarda 400ms após última alteração antes de disparar requisição
-        if (filterDebounce) clearTimeout(filterDebounce);
-        filterDebounce = setTimeout(async () => {
-          await reloadWithFilters();
-          await loadTableData(1);
-        }, 400);
       });
     }
   });

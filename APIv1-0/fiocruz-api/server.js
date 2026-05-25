@@ -2332,38 +2332,44 @@ app.get('/api/resolucao/agregados', async (req, res) => {
       }
     };
 
-    // Queries de evolução dependem de JOIN espelho_cnes↔vinculos sem índice:
-    // isoladas com timeout de 45s — retornam vazio se o banco não responder a tempo.
-    // Timeout reduzido para 20s: falha rápido e libera a conexão para as demais queries
-    let evolucao = { rows: [] };
-    try {
-      evolucao = await queryComTimeout(evolucaoQuery, params, 120000);
-    } catch (err) {
-      console.warn('⚠️ evolucao ignorada (timeout/erro):', err.message);
-    }
+    // Helper para queries simples com ou sem params
+    const runQ = (sql) => params.length > 0 ? pool.query(sql, params) : pool.query(sql);
 
-    // Tipo não depende de varredura do espelho por período — geralmente rápida
-    const tipo = params.length > 0 ? await pool.query(tipoQuery, params) : await pool.query(tipoQuery);
+    // Helper para queries com timeout isolado — retorna { rows: [] } se exceder o limite
+    const runQTimeout = async (sql, ms = 120000) => {
+      try { return await queryComTimeout(sql, params, ms); }
+      catch (err) { console.warn('⚠️ Query ignorada (timeout/erro):', err.message); return { rows: [] }; }
+    };
 
-    let evolucaoAcumulada = { rows: [] };
-    try {
-      evolucaoAcumulada = await queryComTimeout(evolucaoAcumuladaQuery, params, 120000);
-    } catch (err) {
-      console.warn('⚠️ evolucaoAcumulada ignorada (timeout/erro):', err.message);
-    }
-
-    const cbo          = params.length > 0 ? await pool.query(cboQuery, params)           : await pool.query(cboQuery);
-    const cnes         = params.length > 0 ? await pool.query(cnesQuery, params)          : await pool.query(cnesQuery);
-    const cboPendentes = params.length > 0 ? await pool.query(cboPendentesQuery, params)  : await pool.query(cboPendentesQuery);
-    const cnesPendentes= params.length > 0 ? await pool.query(cnesPendentesQuery, params) : await pool.query(cnesPendentesQuery);
-
-    // Total de vínculos no CNES por competência (sempre sem filtro — reflete base CNES completa)
-    const espelhoPorComp = await pool.query(`
-      SELECT nu_comp, COUNT(*) AS total_cnes
-      FROM censo.espelho_cnes_nova
-      GROUP BY nu_comp
-      ORDER BY nu_comp
-    `);
+    // Executar TODAS as queries em paralelo:
+    //   • evolucao e evolucaoAcumulada → timeout isolado (JOIN pesado no espelho)
+    //   • tipo, cbo, cnes, cboPendentes, cnesPendentes → sem timeout (query mais leve)
+    //   • espelhoPorComp → sem filtro de params, sempre rápida
+    console.log('📊 Disparando todas as queries de agregados em paralelo...');
+    const [
+      evolucao,
+      evolucaoAcumulada,
+      tipo,
+      cbo,
+      cnes,
+      cboPendentes,
+      cnesPendentes,
+      espelhoPorComp
+    ] = await Promise.all([
+      runQTimeout(evolucaoQuery),
+      runQTimeout(evolucaoAcumuladaQuery),
+      runQ(tipoQuery),
+      runQ(cboQuery),
+      runQ(cnesQuery),
+      runQ(cboPendentesQuery),
+      runQ(cnesPendentesQuery),
+      pool.query(`
+        SELECT nu_comp, COUNT(*) AS total_cnes
+        FROM censo.espelho_cnes_nova
+        GROUP BY nu_comp
+        ORDER BY nu_comp
+      `)
+    ]);
 
     console.log('✅ Agregados de resolução concluídos');
     console.log('📊 Evolução:', evolucao.rows.length, 'competências');
