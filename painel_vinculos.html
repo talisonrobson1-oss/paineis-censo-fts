@@ -1612,8 +1612,8 @@ function renderCharts(){
     const labels=Object.keys(D.identidade_genero||{});
     const vals=Object.values(D.identidade_genero||{});
     const totalIdent = vals.reduce((sum, v) => sum + v, 0);
-    const totalVinculos = D.stats?.total_vinculos || 0;
-    const invalidos = totalVinculos - totalIdent;
+    const totalProfissionais = D.stats?.total_profissionais || 0;
+    const invalidos = totalProfissionais - totalIdent;
     
     const finalLabels = [...labels];
     const finalVals = [...vals];
@@ -1641,8 +1641,8 @@ function renderCharts(){
     const labels=Object.keys(D.escolaridade||{});
     const vals=Object.values(D.escolaridade||{});
     const totalEsc = vals.reduce((sum, v) => sum + v, 0);
-    const totalVinculos = D.stats?.total_vinculos || 0;
-    const invalidos = totalVinculos - totalEsc;
+    const totalProfissionais = D.stats?.total_profissionais || 0;
+    const invalidos = totalProfissionais - totalEsc;
     
     const allLabels = [...labels];
     const allVals = [...vals];
@@ -1672,8 +1672,8 @@ function renderCharts(){
   {
     const entries=Object.entries(D.cine||{}).sort((a,b)=>b[1]-a[1]);
     const totalCine = entries.reduce((sum, e) => sum + e[1], 0);
-    const totalVinculos = D.stats?.total_vinculos || 0;
-    const invalidos = totalVinculos - totalCine;
+    const totalProfissionais = D.stats?.total_profissionais || 0;
+    const invalidos = totalProfissionais - totalCine;
     const showInvalidos = document.getElementById('show-invalido-cine')?.checked ?? true;
     
     if(invalidos > 0 && showInvalidos) {
@@ -1752,8 +1752,8 @@ function renderCharts(){
     const labels=Object.keys(D.expectativa||{});
     const vals=Object.values(D.expectativa||{});
     const totalExp = vals.reduce((sum, v) => sum + v, 0);
-    const totalVinculos = D.stats?.total_vinculos || 0;
-    const invalidos = totalVinculos - totalExp;
+    const totalProfissionais = D.stats?.total_profissionais || 0;
+    const invalidos = totalProfissionais - totalExp;
     
     const finalLabels = [...labels];
     const finalVals = [...vals];
