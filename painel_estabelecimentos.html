@@ -1180,7 +1180,7 @@ function populateSelect(id, items, selectedUF) {
  * Popula um select mesclando itens padrão (CNES) com itens DF em optgroups separados.
  * O grupo DF só aparece quando nenhuma UF é selecionada ou quando UF = 'DF'.
  */
-function populateSelectMerged(id, standardItems, dfItems, selectedUF) {
+function populateSelectMerged(id, standardItems, dfItems, selectedUF, flatSorted = false) {
   const select = document.getElementById(id);
   if (!select) return;
   // Salvar placeholder ("Todos" / "Todas") e limpar TODO o conteúdo,
@@ -1194,6 +1194,33 @@ function populateSelectMerged(id, standardItems, dfItems, selectedUF) {
   const filtered = isGeoItem && ufs.length
     ? standardItems.filter(item => ufs.includes(item.uf))
     : standardItems;
+  const showDF = !ufs.length || ufs.includes('DF');
+
+  if (flatSorted) {
+    // Lista única ordenada alfabeticamente (municípios + RAs misturados)
+    const all = [];
+    filtered.forEach(item => {
+      const label = isGeoItem ? (item.uf ? `[${item.uf}] ${item.valor}` : item.valor) : item;
+      const value = isGeoItem ? item.valor : item;
+      all.push({ value, label });
+    });
+    if (showDF && dfItems && dfItems.length > 0) {
+      dfItems.forEach(val => {
+        const m = val.match(/^(.*?)\s*\(([A-Z]{2})\)\s*$/);
+        const label = m ? `[${m[2]}] ${m[1].trim()}` : val;
+        all.push({ value: val, label });
+      });
+    }
+    const sortKey = s => s.replace(/^\[.*?\]\s*/, '');
+    all.sort((a, b) => sortKey(a.label).localeCompare(sortKey(b.label), 'pt-BR', { sensitivity: 'base' }));
+    all.forEach(({ value, label }) => {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = label;
+      select.appendChild(opt);
+    });
+    return;
+  }
 
   // Grupo: valores padrão CNES
   if (filtered.length > 0) {
@@ -1214,7 +1241,6 @@ function populateSelectMerged(id, standardItems, dfItems, selectedUF) {
   }
 
   // Grupo: valores DF — só exibe se sem filtro de UF ou DF está entre as UFs selecionadas
-  const showDF = !ufs.length || ufs.includes('DF');
   if (showDF && dfItems && dfItems.length > 0) {
     const grpDF = document.createElement('optgroup');
     grpDF.label = 'Classificação DF';
@@ -1247,8 +1273,8 @@ function populateFilters(selectedUF) {
   // Regiões de Saúde — mescla padrão CNES + classificação DF
   populateSelectMerged('f-regional', D.filtros.regional  || [], dfRegioesSaude, uf);
 
-  // Municípios / RAs — mescla padrão CNES + regiões administrativas DF
-  populateSelectMerged('f-municipio', D.filtros.municipio || [], dfRegioesAdm,   uf);
+  // Municípios / RAs — mescla padrão CNES + regiões administrativas DF (lista plana ordenada)
+  populateSelectMerged('f-municipio', D.filtros.municipio || [], dfRegioesAdm,   uf, true);
 
   populateSelect('f-situacao',    D.filtros.situacao    || [], '');
   populateSelect('f-esfera',      D.filtros.esfera      || [], '');
@@ -1357,15 +1383,20 @@ async function reloadWithFilters() {
     const regionalVals  = gvArr('f-regional');
     const municipioVals = gvArr('f-municipio');
 
-    // Separar valores de "Classificação DF" dos valores "Padrão CNES" pelo optgroup
+    // Separar valores DF dos valores padrão CNES:
+    // - f-regional: ainda usa optgroups → detectar pelo optgroup
+    // - f-municipio: lista plana → usar membership na lista de RAs do DF
     const isOptgroupDF = (selectId, val) =>
       $('#' + selectId + ' option[value="' + val.replace(/"/g, '\\"') + '"]')
         .closest('optgroup').attr('label') === 'Classificação DF';
 
-    const dfRegionais   = regionalVals.filter(v => isOptgroupDF('f-regional',  v));
-    const stdRegionais  = regionalVals.filter(v => !isOptgroupDF('f-regional', v));
-    const dfMunicipios  = municipioVals.filter(v => isOptgroupDF('f-municipio',  v));
-    const stdMunicipios = municipioVals.filter(v => !isOptgroupDF('f-municipio', v));
+    const dfRegioesSaudeDF = D.filtrosDF ? (D.filtrosDF.regioes_saude_df || []) : [];
+    const dfRegioesAdmDF   = D.filtrosDF ? (D.filtrosDF.regioes_adm_df   || []) : [];
+
+    const dfRegionais   = regionalVals.filter(v => dfRegioesSaudeDF.includes(v) || isOptgroupDF('f-regional',  v));
+    const stdRegionais  = regionalVals.filter(v => !dfRegioesSaudeDF.includes(v) && !isOptgroupDF('f-regional', v));
+    const dfMunicipios  = municipioVals.filter(v => dfRegioesAdmDF.includes(v));
+    const stdMunicipios = municipioVals.filter(v => !dfRegioesAdmDF.includes(v));
 
     // "Padrão CNES: DISTRITO FEDERAL" → excluir CNES já classificados (mostrar os ~824 sem classificação)
     const ufVals = gvArr('f-uf');
