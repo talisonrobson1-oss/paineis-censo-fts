@@ -933,9 +933,9 @@ function populateFilters(data, selectedUF) {
   // Normaliza para array (suporta string única ou array de UFs)
   const uf = Array.isArray(selectedUF) ? selectedUF.filter(Boolean) : (selectedUF ? [selectedUF] : []);
 
-  // Macrorregião (filtro por UF se selecionado)
+  // Macrorregião (filtro por UF se selecionado; sg_uf já vem da API)
   const macroItems = data.macro || [];
-  const macroFiltered = uf.length ? macroItems.filter(i => !i.uf || uf.includes(i.uf)) : macroItems;
+  const macroFiltered = uf.length ? macroItems.filter(i => uf.includes(i.uf)) : macroItems;
   popWithSearch('f-macro', macroFiltered);
 
   // Região de Saúde — mescla padrão CNES + classificação DF

@@ -2472,34 +2472,37 @@ app.get('/api/resolucao/filtros', async (req, res) => {
         ORDER BY sg_uf
       `),
       
-      // Macrorregião
+      // Macrorregião (inclui sg_uf para cascata no cliente)
       pool.query(`
-        SELECT DISTINCT 
+        SELECT DISTINCT
           no_macrorregional as codigo,
           no_macrorregional as descricao,
-          no_macrorregional as valor
+          no_macrorregional as valor,
+          sg_uf             as uf
         FROM censo.recenseamento_nova
         WHERE no_macrorregional IS NOT NULL
         ORDER BY no_macrorregional
       `),
-      
-      // Região de Saúde
+
+      // Região de Saúde (inclui sg_uf para cascata no cliente)
       pool.query(`
-        SELECT DISTINCT 
+        SELECT DISTINCT
           no_regional_saude as codigo,
           no_regional_saude as descricao,
-          no_regional_saude as valor
+          no_regional_saude as valor,
+          sg_uf             as uf
         FROM censo.recenseamento_nova
         WHERE no_regional_saude IS NOT NULL
         ORDER BY no_regional_saude
       `),
-      
-      // Município
+
+      // Município (inclui sg_uf para cascata no cliente)
       pool.query(`
-        SELECT DISTINCT 
+        SELECT DISTINCT
           no_municipio as codigo,
           no_municipio as descricao,
-          no_municipio as valor
+          no_municipio as valor,
+          sg_uf        as uf
         FROM censo.recenseamento_nova
         WHERE no_municipio IS NOT NULL
         ORDER BY no_municipio
