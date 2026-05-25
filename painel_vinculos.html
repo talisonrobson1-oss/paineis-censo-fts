@@ -1000,7 +1000,10 @@ function populateSelectMergedVinc(id, standardItems, dfItems, selectedUF) {
     grpDF.label = 'Classificação DF';
     dfItems.forEach(val => {
       const o = document.createElement('option');
-      o.value = val; o.textContent = val;
+      o.value = val;
+      // Converte "Nome (UF)" → "[UF] Nome" para padronizar com os demais filtros geo
+      const m = val.match(/^(.*?)\s*\(([A-Z]{2})\)\s*$/);
+      o.textContent = m ? `[${m[2]}] ${m[1].trim()}` : val;
       grpDF.appendChild(o);
     });
     select.appendChild(grpDF);
