@@ -936,7 +936,7 @@ function populateFilters(data, selectedUF) {
   // Macrorregião (filtro por UF se selecionado; sg_uf já vem da API)
   const macroItems = data.macro || [];
   const macroFiltered = uf.length ? macroItems.filter(i => uf.includes(i.uf)) : macroItems;
-  popWithSearch('f-macro', macroFiltered);
+  popWithSearch('f-macro', macroFiltered, i => i.uf ? `[${i.uf}] ${i.valor}` : i.valor);
 
   // Região de Saúde — mescla padrão CNES + classificação DF
   const dfRegioesSaude = _filtrosDFRes ? (_filtrosDFRes.regioes_saude_df || []) : [];
@@ -966,14 +966,14 @@ function pop(id, vals) {
   });
 }
 
-function popWithSearch(id, items) {
+function popWithSearch(id, items, labelFn) {
   const s = document.getElementById(id);
   if (!s) return;
   while (s.options.length > 1) s.remove(1);
   items.forEach(item => {
     const o = document.createElement('option');
     o.value = item.codigo;
-    o.textContent = item.valor;
+    o.textContent = labelFn ? labelFn(item) : item.valor;
     s.appendChild(o);
   });
 }
@@ -1003,7 +1003,7 @@ function populateSelectMergedRes(id, standardItems, dfItems, selectedUF) {
       const o = document.createElement('option');
       if (isGeo) {
         o.value = item.codigo || item.valor;
-        o.textContent = item.valor;
+        o.textContent = item.uf ? `[${item.uf}] ${item.valor}` : item.valor;
       } else {
         o.value = o.textContent = item;
       }
