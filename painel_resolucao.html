@@ -930,10 +930,12 @@ function populateFilters(data, selectedUF) {
   // Recenseador
   pop('f-recenseador', data.recenseador || []);
 
+  // Normaliza para array (suporta string única ou array de UFs)
+  const uf = Array.isArray(selectedUF) ? selectedUF.filter(Boolean) : (selectedUF ? [selectedUF] : []);
+
   // Macrorregião (filtro por UF se selecionado)
-  const uf = selectedUF || '';
   const macroItems = data.macro || [];
-  const macroFiltered = uf ? macroItems.filter(i => !i.uf || i.uf === uf) : macroItems;
+  const macroFiltered = uf.length ? macroItems.filter(i => !i.uf || uf.includes(i.uf)) : macroItems;
   popWithSearch('f-macro', macroFiltered);
 
   // Região de Saúde — mescla padrão CNES + classificação DF
@@ -989,8 +991,9 @@ function populateSelectMergedRes(id, standardItems, dfItems, selectedUF) {
   s.innerHTML = phHTML;
 
   const isGeo = standardItems.length > 0 && typeof standardItems[0] === 'object' && standardItems[0].valor !== undefined;
-  const filtered = isGeo && selectedUF
-    ? standardItems.filter(i => i.uf === selectedUF)
+  const ufs = Array.isArray(selectedUF) ? selectedUF.filter(Boolean) : (selectedUF ? [selectedUF] : []);
+  const filtered = isGeo && ufs.length
+    ? standardItems.filter(i => ufs.includes(i.uf))
     : standardItems;
 
   if (filtered.length > 0) {
@@ -1009,7 +1012,7 @@ function populateSelectMergedRes(id, standardItems, dfItems, selectedUF) {
     s.appendChild(grp);
   }
 
-  const showDF = !selectedUF || selectedUF === 'DF';
+  const showDF = !ufs.length || ufs.includes('DF');
   if (showDF && dfItems && dfItems.length > 0) {
     const grpDF = document.createElement('optgroup');
     grpDF.label = 'Classificação DF';
@@ -1071,10 +1074,9 @@ function initializeSelect2() {
           activeFilters.municipio = [];
           activeFilters.regiao_saude_df = [];
           activeFilters.regiao_adm_df = [];
-          // Repopular com primeira UF selecionada
-          const ufSel = ufVals[0] || '';
+          // Repopular com todas as UFs selecionadas
           if (_lastFiltrosRes) {
-            populateFilters(_lastFiltrosRes, ufSel);
+            populateFilters(_lastFiltrosRes, ufVals);
             if (ufVals.length) setTimeout(() => $('#f-uf').val(ufVals).trigger('change.select2'), 50);
           }
           updateResFilterBadge();

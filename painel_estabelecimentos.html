@@ -1158,8 +1158,9 @@ function populateSelect(id, items, selectedUF) {
 
   const isGeoItem = items.length > 0 && typeof items[0] === 'object' && items[0].valor !== undefined;
 
-  const filtered = isGeoItem && selectedUF
-    ? items.filter(item => item.uf === selectedUF)
+  const ufs = Array.isArray(selectedUF) ? selectedUF.filter(Boolean) : (selectedUF ? [selectedUF] : []);
+  const filtered = isGeoItem && ufs.length
+    ? items.filter(item => ufs.includes(item.uf))
     : items;
 
   filtered.forEach(item => {
@@ -1189,8 +1190,9 @@ function populateSelectMerged(id, standardItems, dfItems, selectedUF) {
   select.innerHTML = placeholderHTML;
 
   const isGeoItem = standardItems.length > 0 && typeof standardItems[0] === 'object';
-  const filtered = isGeoItem && selectedUF
-    ? standardItems.filter(item => item.uf === selectedUF)
+  const ufs = Array.isArray(selectedUF) ? selectedUF.filter(Boolean) : (selectedUF ? [selectedUF] : []);
+  const filtered = isGeoItem && ufs.length
+    ? standardItems.filter(item => ufs.includes(item.uf))
     : standardItems;
 
   // Grupo: valores padrão CNES
@@ -1211,8 +1213,8 @@ function populateSelectMerged(id, standardItems, dfItems, selectedUF) {
     select.appendChild(grp);
   }
 
-  // Grupo: valores DF — só exibe se sem filtro de UF ou UF = DF
-  const showDF = !selectedUF || selectedUF === 'DF';
+  // Grupo: valores DF — só exibe se sem filtro de UF ou DF está entre as UFs selecionadas
+  const showDF = !ufs.length || ufs.includes('DF');
   if (showDF && dfItems && dfItems.length > 0) {
     const grpDF = document.createElement('optgroup');
     grpDF.label = 'Classificação DF';
@@ -1232,7 +1234,8 @@ function populateFilters(selectedUF) {
     return;
   }
 
-  const uf = selectedUF || '';
+  // Normaliza para array (suporta string única ou array de UFs)
+  const uf = Array.isArray(selectedUF) ? selectedUF.filter(Boolean) : (selectedUF ? [selectedUF] : []);
 
   const dfRegioesSaude = D.filtrosDF ? (D.filtrosDF.regioes_saude_df || []) : [];
   const dfRegioesAdm   = D.filtrosDF ? (D.filtrosDF.regioes_adm_df   || []) : [];
@@ -1306,8 +1309,8 @@ function initializeSelect2() {
             const $dep = $('#' + depId);
             if ($dep.data('select2')) $dep.val(null).trigger('change.select2');
           });
-          // Repopular com primeira UF selecionada (ou '' para todas)
-          const ufSel = Array.isArray(val) ? (val[0] || '') : (val || '');
+          // Repopular com todas as UFs selecionadas
+          const ufSel = Array.isArray(val) ? val.filter(Boolean) : (val ? [val] : []);
           populateFilters(ufSel);
           // Re-inicializar Select2 nos dependentes
           ['f-macro', 'f-regional', 'f-municipio'].forEach(depId => {
