@@ -915,63 +915,63 @@ app.get('/api/vinculos/agregados', async (req, res) => {
         GROUP BY no_tipo_operacao_censo, st_cnes
       `),
       
-      // Sexo (unificado: M/1=Masculino, F/2=Feminino, resto=Inválido)
+      // Sexo (unificado: M/1=Masculino, F/2=Feminino, resto=Inválido) — CPFs únicos
       executeQuery(`
-        SELECT 
-          CASE 
+        SELECT
+          CASE
             WHEN co_sexo IN ('M', '1') THEN 'Masculino'
             WHEN co_sexo IN ('F', '2') THEN 'Feminino'
             ELSE 'Inválido/Não informado'
           END as sexo,
-          COUNT(*) as n
+          COUNT(DISTINCT nu_cpf) as n
         FROM censo.recenseados_nova
         ${whereClause ? whereClause + " AND co_sexo IS NOT NULL AND co_sexo != ''" : "WHERE co_sexo IS NOT NULL AND co_sexo != ''"}
-        GROUP BY 
-          CASE 
+        GROUP BY
+          CASE
             WHEN co_sexo IN ('M', '1') THEN 'Masculino'
             WHEN co_sexo IN ('F', '2') THEN 'Feminino'
             ELSE 'Inválido/Não informado'
           END
       `),
       
-      // Raça/Cor
+      // Raça/Cor — CPFs únicos
       executeQuery(`
-        SELECT 
-          CASE 
-            WHEN ds_raca_cor IS NULL OR ds_raca_cor = '' OR UPPER(ds_raca_cor) = 'SEM INFORMAÇÃO' 
+        SELECT
+          CASE
+            WHEN ds_raca_cor IS NULL OR ds_raca_cor = '' OR UPPER(ds_raca_cor) = 'SEM INFORMAÇÃO'
             THEN 'Sem informação'
             ELSE ds_raca_cor
-          END as raca, 
-          COUNT(*) as n
+          END as raca,
+          COUNT(DISTINCT nu_cpf) as n
         FROM censo.recenseados_nova
         ${whereClause}
-        GROUP BY 
-          CASE 
-            WHEN ds_raca_cor IS NULL OR ds_raca_cor = '' OR UPPER(ds_raca_cor) = 'SEM INFORMAÇÃO' 
+        GROUP BY
+          CASE
+            WHEN ds_raca_cor IS NULL OR ds_raca_cor = '' OR UPPER(ds_raca_cor) = 'SEM INFORMAÇÃO'
             THEN 'Sem informação'
             ELSE ds_raca_cor
           END
       `),
 
-      // Identidade de Gênero
+      // Identidade de Gênero — CPFs únicos
       executeQuery(`
-        SELECT ds_identidade_genero as identidade, COUNT(*) as n
+        SELECT ds_identidade_genero as identidade, COUNT(DISTINCT nu_cpf) as n
         FROM censo.recenseados_nova
         ${whereClause ? whereClause + " AND ds_identidade_genero IS NOT NULL AND ds_identidade_genero != ''" : "WHERE ds_identidade_genero IS NOT NULL AND ds_identidade_genero != ''"}
         GROUP BY ds_identidade_genero
       `),
       
-      // Escolaridade
+      // Escolaridade — CPFs únicos
       executeQuery(`
-        SELECT ds_escolaridade as escolaridade, COUNT(*) as n
+        SELECT ds_escolaridade as escolaridade, COUNT(DISTINCT nu_cpf) as n
         FROM censo.recenseados_nova
         ${whereClause ? whereClause + " AND ds_escolaridade IS NOT NULL AND ds_escolaridade != ''" : "WHERE ds_escolaridade IS NOT NULL AND ds_escolaridade != ''"}
         GROUP BY ds_escolaridade
       `),
       
-      // Área de Formação (CINE) - Top 15
+      // Área de Formação (CINE) - Top 15 — CPFs únicos
       executeQuery(`
-        SELECT ds_cine as cine, COUNT(*) as n
+        SELECT ds_cine as cine, COUNT(DISTINCT nu_cpf) as n
         FROM censo.recenseados_nova
         ${whereClause ? whereClause + " AND ds_cine IS NOT NULL AND ds_cine != ''" : "WHERE ds_cine IS NOT NULL AND ds_cine != ''"}
         GROUP BY ds_cine
@@ -1049,9 +1049,9 @@ app.get('/api/vinculos/agregados', async (req, res) => {
           END
       `),
       
-      // Expectativa Profissional
+      // Expectativa Profissional — CPFs únicos
       executeQuery(`
-        SELECT no_expectativa_profissional as expectativa, COUNT(*) as n
+        SELECT no_expectativa_profissional as expectativa, COUNT(DISTINCT nu_cpf) as n
         FROM censo.recenseados_nova
         ${whereClause ? whereClause + " AND no_expectativa_profissional IS NOT NULL AND no_expectativa_profissional != ''" : "WHERE no_expectativa_profissional IS NOT NULL AND no_expectativa_profissional != ''"}
         GROUP BY no_expectativa_profissional
