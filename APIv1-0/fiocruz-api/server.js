@@ -1801,7 +1801,8 @@ END`;
 app.get('/api/resolucao/stats', async (req, res) => {
   try {
     const { whereClause, params } = buildResolucaoWhere(req.query);
-    const competencia = req.query.comp || req.query.competencia || null; // Aceitar 'comp' ou 'competencia'
+    const _rawComp = req.query.comp || req.query.competencia || null;
+    const competencia = Array.isArray(_rawComp) ? (_rawComp[0] || null) : (_rawComp || null); // Aceitar 'comp' ou 'competencia'; normaliza array → string
 
     console.log('📊 /api/resolucao/stats chamado');
     console.log('📊 Competência recebida:', competencia || 'TODAS');
@@ -1988,7 +1989,8 @@ app.get('/api/resolucao/stats', async (req, res) => {
 app.get('/api/resolucao/agregados', async (req, res) => {
   try {
     const { whereClause, params } = buildResolucaoWhere(req.query);
-    const competencia = req.query.comp || req.query.competencia || null; // Aceitar 'comp' ou 'competencia'
+    const _rawComp = req.query.comp || req.query.competencia || null;
+    const competencia = Array.isArray(_rawComp) ? (_rawComp[0] || null) : (_rawComp || null); // Aceitar 'comp' ou 'competencia'; normaliza array → string
 
     // Verificar se há filtros que exigem JOIN com recenseamento
     const needsRecenseamentoJoin = !!(
@@ -2548,7 +2550,8 @@ app.get('/api/resolucao/filtros', async (req, res) => {
 app.get('/api/resolucao/tabela', async (req, res) => {
   try {
     let { whereClause, params } = buildResolucaoWhere(req.query);
-    const competencia = req.query.comp || req.query.competencia || null;
+    const _rawComp = req.query.comp || req.query.competencia || null;
+    const competencia = Array.isArray(_rawComp) ? (_rawComp[0] || null) : (_rawComp || null);
     const busca = req.query.busca;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 30;
@@ -2638,7 +2641,8 @@ app.get('/api/resolucao/tabela', async (req, res) => {
 app.get('/api/resolucao/estabelecimentos-pendentes', async (req, res) => {
   try {
     const { whereClause, params } = buildResolucaoWhere(req.query);
-    const competencia = req.query.comp || req.query.competencia || null;
+    const _rawComp = req.query.comp || req.query.competencia || null;
+    const competencia = Array.isArray(_rawComp) ? (_rawComp[0] || null) : (_rawComp || null);
     // Sem competência → usa a mais recente para não varrer todas as competências do espelho
     const compFilter  = competencia
       ? `AND e.nu_comp::text = '${competencia}'`
