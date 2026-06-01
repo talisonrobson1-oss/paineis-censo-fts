@@ -1180,7 +1180,7 @@ function populateSelect(id, items, selectedUF) {
  * Popula um select mesclando itens padrão (CNES) com itens DF em optgroups separados.
  * O grupo DF só aparece quando nenhuma UF é selecionada ou quando UF = 'DF'.
  */
-function populateSelectMerged(id, standardItems, dfItems, selectedUF, flatSorted = false) {
+function populateSelectMerged(id, standardItems, dfItems, selectedUF, flatSorted = false, naoClassifDF = -1) {
   const select = document.getElementById(id);
   if (!select) return;
   // Salvar placeholder ("Todos" / "Todas") e limpar TODO o conteúdo,
@@ -1191,10 +1191,18 @@ function populateSelectMerged(id, standardItems, dfItems, selectedUF, flatSorted
 
   const isGeoItem = standardItems.length > 0 && typeof standardItems[0] === 'object';
   const ufs = Array.isArray(selectedUF) ? selectedUF.filter(Boolean) : (selectedUF ? [selectedUF] : []);
-  const filtered = isGeoItem && ufs.length
+  let filtered = isGeoItem && ufs.length
     ? standardItems.filter(item => ufs.includes(item.uf))
     : standardItems;
   const showDF = !ufs.length || ufs.includes('DF');
+
+  // Ocultar "DISTRITO FEDERAL" do grupo Padrão CNES quando todos os estabs. DF estão classificados
+  if (showDF && naoClassifDF === 0) {
+    filtered = filtered.filter(item => {
+      const v = isGeoItem ? item.valor : item;
+      return typeof v !== 'string' || v.toUpperCase() !== 'DISTRITO FEDERAL';
+    });
+  }
 
   if (flatSorted) {
     // Lista única ordenada alfabeticamente (municípios + RAs misturados)
@@ -1271,7 +1279,8 @@ function populateFilters(selectedUF) {
   populateSelect('f-macro', D.filtros.macrorregiao || [], uf);
 
   // Regiões de Saúde — mescla padrão CNES + classificação DF
-  populateSelectMerged('f-regional', D.filtros.regional  || [], dfRegioesSaude, uf);
+  const naoClassifDF = D.filtrosDF?.nao_classificados_df ?? -1;
+  populateSelectMerged('f-regional', D.filtros.regional  || [], dfRegioesSaude, uf, false, naoClassifDF);
 
   // Municípios / RAs — mescla padrão CNES + regiões administrativas DF (lista plana ordenada)
   populateSelectMerged('f-municipio', D.filtros.municipio || [], dfRegioesAdm,   uf, true);

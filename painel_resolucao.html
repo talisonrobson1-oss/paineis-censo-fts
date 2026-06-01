@@ -935,7 +935,8 @@ function populateFilters(data, selectedUF) {
 
   // Região de Saúde — mescla padrão CNES + classificação DF
   const dfRegioesSaude = _filtrosDFRes ? (_filtrosDFRes.regioes_saude_df || []) : [];
-  populateSelectMergedRes('f-regional', data.regional || [], dfRegioesSaude, uf);
+  const _naoClassifDF = _filtrosDFRes?.nao_classificados_df ?? -1;
+  populateSelectMergedRes('f-regional', data.regional || [], dfRegioesSaude, uf, false, _naoClassifDF);
 
   // Município — mescla padrão CNES + regiões administrativas DF (lista plana ordenada)
   const dfRegioesAdm = _filtrosDFRes ? (_filtrosDFRes.regioes_adm_df || []) : [];
@@ -978,7 +979,7 @@ function popWithSearch(id, items, labelFn) {
  * dfItems são strings simples (nomes das regiões DF).
  * standardItems são objetos {codigo, valor, uf?} ou strings.
  */
-function populateSelectMergedRes(id, standardItems, dfItems, selectedUF, flatSorted = false) {
+function populateSelectMergedRes(id, standardItems, dfItems, selectedUF, flatSorted = false, naoClassifDF = -1) {
   const s = document.getElementById(id);
   if (!s) return;
   const ph = s.querySelector('option[value=""]');
@@ -987,10 +988,17 @@ function populateSelectMergedRes(id, standardItems, dfItems, selectedUF, flatSor
 
   const isGeo = standardItems.length > 0 && typeof standardItems[0] === 'object' && standardItems[0].valor !== undefined;
   const ufs = Array.isArray(selectedUF) ? selectedUF.filter(Boolean) : (selectedUF ? [selectedUF] : []);
-  const filtered = isGeo && ufs.length
+  let filtered = isGeo && ufs.length
     ? standardItems.filter(i => ufs.includes(i.uf))
     : standardItems;
   const showDF = !ufs.length || ufs.includes('DF');
+
+  if (showDF && naoClassifDF === 0) {
+    filtered = filtered.filter(item => {
+      const v = isGeo ? item.valor : item;
+      return typeof v !== 'string' || v.toUpperCase() !== 'DISTRITO FEDERAL';
+    });
+  }
 
   if (flatSorted) {
     // Lista única ordenada alfabeticamente (municípios + RAs misturados)

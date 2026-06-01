@@ -976,7 +976,7 @@ function populateSelectSimples(id, items, selectedUF) {
  * Popula um select mesclando opções padrão CNES + opções DF em optgroups.
  * O grupo DF só aparece quando UF não está selecionada ou UF = 'DF'.
  */
-function populateSelectMergedVinc(id, standardItems, dfItems, selectedUF, flatSorted = false) {
+function populateSelectMergedVinc(id, standardItems, dfItems, selectedUF, flatSorted = false, naoClassifDF = -1) {
   const select = document.getElementById(id);
   if (!select) return;
   const placeholder = select.querySelector('option[value=""]');
@@ -985,8 +985,15 @@ function populateSelectMergedVinc(id, standardItems, dfItems, selectedUF, flatSo
 
   const isGeo = standardItems.length > 0 && typeof standardItems[0] === 'object';
   const ufs = Array.isArray(selectedUF) ? selectedUF.filter(Boolean) : (selectedUF ? [selectedUF] : []);
-  const filtered = isGeo && ufs.length ? standardItems.filter(i => ufs.includes(i.uf)) : standardItems;
+  let filtered = isGeo && ufs.length ? standardItems.filter(i => ufs.includes(i.uf)) : standardItems;
   const showDF = !ufs.length || ufs.includes('DF');
+
+  if (showDF && naoClassifDF === 0) {
+    filtered = filtered.filter(item => {
+      const v = isGeo ? item.valor : item;
+      return typeof v !== 'string' || v.toUpperCase() !== 'DISTRITO FEDERAL';
+    });
+  }
 
   if (flatSorted) {
     // Lista única ordenada alfabeticamente (municípios + RAs misturados)
@@ -1058,8 +1065,9 @@ function repopulateDependentes(selectedUF) {
     if ($s.data('select2')) $s.select2('destroy');
   });
 
+  const _naoClassifDF = _filtrosDF?.nao_classificados_df ?? -1;
   populateSelectSimples('f-macro', filtrosEstab.macrorregiao || [], uf);
-  populateSelectMergedVinc('f-regional', filtrosEstab.regional || [], dfRegioesSaude, uf);
+  populateSelectMergedVinc('f-regional', filtrosEstab.regional || [], dfRegioesSaude, uf, false, _naoClassifDF);
   populateSelectMergedVinc('f-municipio', filtrosEstab.municipio || [], dfRegioesAdm, uf, true);
 
   // Re-inicializar Select2 nos dependentes
@@ -1088,8 +1096,9 @@ function populateFilters(data, filtrosEstab, selectedUF) {
     const uf = selectedUF || '';
 
     populateSelectSimples('f-uf', filtrosEstab.uf || [], '');
+    const _naoClassifDF2 = _filtrosDF?.nao_classificados_df ?? -1;
     populateSelectSimples('f-macro', filtrosEstab.macrorregiao || [], uf);
-    populateSelectMergedVinc('f-regional', filtrosEstab.regional || [], dfRegioesSaude, uf);
+    populateSelectMergedVinc('f-regional', filtrosEstab.regional || [], dfRegioesSaude, uf, false, _naoClassifDF2);
     populateSelectMergedVinc('f-municipio', filtrosEstab.municipio || [], dfRegioesAdm, uf, true);
   }
 

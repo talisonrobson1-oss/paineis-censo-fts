@@ -647,11 +647,34 @@ app.get('/api/estabelecimentos/filtros', async (req, res) => {
  * Retorna as listas de Regiões de Saúde e Regiões Administrativas do DF
  * (carregadas em memória a partir do CSV de regionalização)
  */
-app.get('/api/estabelecimentos/filtros-df', (req, res) => {
-  res.json({
-    regioes_saude_df: Object.keys(dfRegionSaudeMap).sort(),
-    regioes_adm_df:   Object.keys(dfRegionAdmMap).sort()
-  });
+app.get('/api/estabelecimentos/filtros-df', async (req, res) => {
+  try {
+    const classifiedCnes = [...new Set(Object.values(dfRegionSaudeMap).flat())];
+    let nao_classificados_df = 0;
+    if (classifiedCnes.length > 0) {
+      const r = await pool.query(
+        `SELECT COUNT(DISTINCT co_cnes) AS n FROM censo.recenseamento_nova WHERE sg_uf = 'DF' AND co_cnes::text != ALL($1)`,
+        [classifiedCnes]
+      );
+      nao_classificados_df = parseInt(r.rows[0].n) || 0;
+    } else {
+      const r = await pool.query(
+        `SELECT COUNT(DISTINCT co_cnes) AS n FROM censo.recenseamento_nova WHERE sg_uf = 'DF'`
+      );
+      nao_classificados_df = parseInt(r.rows[0].n) || 0;
+    }
+    res.json({
+      regioes_saude_df:    Object.keys(dfRegionSaudeMap).sort(),
+      regioes_adm_df:      Object.keys(dfRegionAdmMap).sort(),
+      nao_classificados_df
+    });
+  } catch (err) {
+    res.json({
+      regioes_saude_df:    Object.keys(dfRegionSaudeMap).sort(),
+      regioes_adm_df:      Object.keys(dfRegionAdmMap).sort(),
+      nao_classificados_df: -1
+    });
+  }
 });
 
 // ========================================
