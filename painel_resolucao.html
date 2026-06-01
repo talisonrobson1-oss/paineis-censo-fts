@@ -1048,9 +1048,8 @@ function populateSelectMergedRes(id, standardItems, dfItems, selectedUF, flatSor
     dfItems.forEach(val => {
       const o = document.createElement('option');
       o.value = val;
-      // Converte "Nome (UF)" → "[UF] Nome" para padronizar com os demais filtros geo
       const m = val.match(/^(.*?)\s*\(([A-Z]{2})\)\s*$/);
-      o.textContent = m ? `[${m[2]}] ${m[1].trim()}` : val;
+      o.textContent = m ? `[${m[2]}] ${m[1].trim()}` : `[DF] ${val}`;
       grpDF.appendChild(o);
     });
     s.appendChild(grpDF);
