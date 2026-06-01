@@ -1207,7 +1207,7 @@ function populateSelectMerged(id, standardItems, dfItems, selectedUF, flatSorted
     if (showDF && dfItems && dfItems.length > 0) {
       dfItems.forEach(val => {
         const m = val.match(/^(.*?)\s*\(([A-Z]{2})\)\s*$/);
-        const label = m ? `[${m[2]}] ${m[1].trim()}` : val;
+        const label = m ? `[${m[2]}] ${m[1].trim()}` : `[DF] ${val}`;
         all.push({ value: val, label });
       });
     }
