@@ -104,7 +104,7 @@
 :root{
   --bg:#0c1a2e;--surface:#152338;--surface2:#1a2d4a;--border:#2a4270;
   --text:#dce8f4;--muted:#7a9ab8;
-  --green:#3fb950;--blue:#4a90e2;--yellow:#d29922;--red:#f85149;--purple:#9b59b6;--orange:#ff7b72;
+  --green:#3fb950;--blue:#4a90e2;--yellow:#d29922;--red:#f85149;--purple:#9b59b6;--orange:#ff7b72;--teal:#20c997;
   --inclusao:#3fb950;--alteracao:#4a90e2;--exclusao:#f85149;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -150,7 +150,7 @@ main{padding:24px 32px;max-width:1600px;margin:0 auto;}
 
 /* KPI */
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:28px;}
-.kpi-grid-destaque{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px;}
+.kpi-grid-linha1{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:16px;}
 .kpi-grid-linha2{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px;}
 .kpi-grid-linha3{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:28px;}
 .kpi{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;position:relative;overflow:hidden;transition:border-color .2s;}
@@ -448,14 +448,19 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
 <main>
   <div class="sec-label">Indicadores Gerais</div>
   
-  <!-- Linha 1: Destaque -->
-  <div class="kpi-grid-destaque">
-    <div class="kpi destaque" style="--ca:var(--purple)"><div class="kpi-lbl">Profissionais Únicos</div><div class="kpi-val" id="k-prof">—</div><div class="kpi-sub" id="k-prof-sub">por CPF completo</div></div>
-    <div class="kpi destaque" style="--ca:var(--blue)"><div class="kpi-lbl">Total de Vínculos</div><div class="kpi-val" id="k-total">—</div><div class="kpi-sub">no filtro atual</div></div>
-    <div class="kpi destaque" style="--ca:var(--yellow)"><div class="kpi-lbl">Média Carga Horária</div><div class="kpi-val" id="k-ch">—</div><div class="kpi-sub">horas semanais</div></div>
+  <!-- Linha 1: Total de Vínculos Recenseados + Total no Espelho -->
+  <div class="kpi-grid-linha1">
+    <div class="kpi destaque" style="--ca:var(--blue)"><div class="kpi-lbl">Total de Vínculos Recenseados</div><div class="kpi-val" id="k-total">—</div><div class="kpi-sub">no filtro atual</div></div>
+    <div class="kpi destaque" style="--ca:var(--teal)"><div class="kpi-lbl">Total no Espelho</div><div class="kpi-val" id="k-espelho">—</div><div class="kpi-sub">vínculos registrados no CNES</div></div>
   </div>
 
-  <!-- Linha 2: Tipo de Operação -->
+  <!-- Linha 2: Profissionais Únicos + Média de Carga Horária -->
+  <div class="kpi-grid-linha1">
+    <div class="kpi destaque" style="--ca:var(--purple)"><div class="kpi-lbl">Profissionais Únicos</div><div class="kpi-val" id="k-prof">—</div><div class="kpi-sub" id="k-prof-sub">por CPF completo</div></div>
+    <div class="kpi destaque" style="--ca:var(--yellow)"><div class="kpi-lbl">Média de Carga Horária</div><div class="kpi-val" id="k-ch">—</div><div class="kpi-sub">horas semanais</div></div>
+  </div>
+
+  <!-- Linha 3: Tipo de Operação -->
   <div class="kpi-grid-linha2">
     <div class="kpi" style="--ca:var(--green)"><div class="kpi-lbl">Inclusões</div><div class="kpi-val" id="k-inc">—</div><div class="kpi-sub" id="k-inc-pct"></div></div>
     <div class="kpi" style="--ca:var(--blue)"><div class="kpi-lbl">Alterações</div><div class="kpi-val" id="k-alt">—</div><div class="kpi-sub" id="k-alt-pct"></div></div>
@@ -1420,6 +1425,7 @@ function updateKPIs(){
   const pct = (n)=> total? ((n/total)*100).toFixed(1)+'%' : '—';
   
   set('k-total', fmt(total));
+  set('k-espelho', D.naoAlterados ? fmt(D.naoAlterados.total_espelho) : '—');
   set('k-prof', fmt(stats.total_profissionais));
   set('k-ch', (stats.media_carga_horaria || 0)+'h');
   
