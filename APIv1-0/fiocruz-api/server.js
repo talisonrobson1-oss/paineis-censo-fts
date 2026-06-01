@@ -30,8 +30,9 @@ const dfRegionAdmMap   = {}; // Região Administrativa / Município (DF)
     for (let i = 1; i < lines.length; i++) {          // pula o cabeçalho
       const cols = lines[i].trim().split(';');
       if (cols.length < 3) continue;
-      const [cnes, regSaude, regAdm] = cols.map(c => c.trim());
-      if (!cnes) continue;
+      const [rawCnes, regSaude, regAdm] = cols.map(c => c.trim());
+      if (!rawCnes) continue;
+      const cnes = rawCnes.padStart(7, '0'); // normaliza para 7 dígitos (padrão do banco)
       if (!dfRegionSaudeMap[regSaude]) dfRegionSaudeMap[regSaude] = [];
       dfRegionSaudeMap[regSaude].push(cnes);
       if (!dfRegionAdmMap[regAdm]) dfRegionAdmMap[regAdm] = [];
