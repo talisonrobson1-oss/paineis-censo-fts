@@ -1081,22 +1081,22 @@ app.get('/api/vinculos/agregados', async (req, res) => {
         GROUP BY no_expectativa_profissional
       `),
 
-      // Estratégia — LEFT JOIN com DISTINCT ON para evitar multiplicação de linhas
-      // e garantir que a soma de todos os valores = Total de Vínculos
+      // Estratégia — CTE filtra recenseados_nova com o whereClause sem risco de
+      // alias collision; LEFT JOIN traz a estratégia do estabelecimento (DISTINCT ON)
       (() => {
-        const estrategiaWhere = whereClause
-          ? whereClause.replace(/\bco_cnes\b/g, 'v.co_cnes')
-          : '';
         const sql = `
+          WITH base AS (
+            SELECT co_cnes FROM censo.recenseados_nova
+            ${whereClause || 'WHERE 1=1'}
+          )
           SELECT COALESCE(NULLIF(r.estrategia, ''), 'Não informado') AS estrategia,
                  COUNT(*) AS n
-          FROM censo.recenseados_nova v
+          FROM base v
           LEFT JOIN (
             SELECT DISTINCT ON (co_cnes) co_cnes, estrategia
             FROM censo.recenseamento_nova
             ORDER BY co_cnes, coletado_em DESC
           ) r ON r.co_cnes = v.co_cnes
-          ${estrategiaWhere}
           GROUP BY COALESCE(NULLIF(r.estrategia, ''), 'Não informado')
           ORDER BY n DESC
         `;
