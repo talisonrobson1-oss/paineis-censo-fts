@@ -1761,15 +1761,15 @@ function buildResolucaoWhere(filters) {
     console.log(`  ✓ Filtro Estabelecimento aplicado: ${estabVals}`);
   }
 
-  // Filtro: Período de Conclusão do Censo (coluna coletado_em em recenseamento_nova)
+  // Filtro: Período de Conclusão do Censo (coluna dt_atualizacao em recenseamento_nova)
   if (filters.periodo_inicio) {
-    conditions.push(`r.coletado_em::date >= $${paramIndex}`);
+    conditions.push(`r.dt_atualizacao::date >= $${paramIndex}`);
     params.push(filters.periodo_inicio);
     paramIndex++;
     console.log(`  ✓ Filtro Período início: ${filters.periodo_inicio}`);
   }
   if (filters.periodo_fim) {
-    conditions.push(`r.coletado_em::date <= $${paramIndex}`);
+    conditions.push(`r.dt_atualizacao::date <= $${paramIndex}`);
     params.push(filters.periodo_fim);
     paramIndex++;
     console.log(`  ✓ Filtro Período fim: ${filters.periodo_fim}`);

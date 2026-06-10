@@ -26,6 +26,7 @@
   },
   "devDependencies": {
     "@types/pg": "^8.20.0",
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.0.1",
+    "xlsx": "^0.18.5"
   }
 }
