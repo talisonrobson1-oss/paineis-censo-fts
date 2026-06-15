@@ -1264,7 +1264,7 @@ app.get('/api/vinculos/tabela', async (req, res) => {
 
     // ── 7. Montar CTEs e UNION ALL ──
     const espelhoCtes = includeEspelho ? `
-      min_comp_cte AS (SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova),
+      min_comp_cte AS (SELECT MAX(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova),
       espelho_min AS (
         SELECT e.*
         FROM censo.espelho_cnes_nova e
@@ -1305,9 +1305,6 @@ app.get('/api/vinculos/tabela', async (req, res) => {
           AND v.co_cnes               = e.co_cnes
           AND v.nu_vinculacao::text   = e.ind_vinculacao::text
           AND v.co_cbo_ocupacao::text = e.co_cbo::text
-          AND COALESCE(v.qt_carga_horaria_ambulatorial::numeric, 0) = COALESCE(e.qt_carga_horaria_ambulatorial::numeric, 0)
-          AND COALESCE(v.qt_carga_horaria_hospitalar::numeric, 0)   = COALESCE(e.qt_carga_hor_hosp_sus::numeric, 0)
-          AND COALESCE(v.qt_carga_horaria_outros::numeric, 0)       = COALESCE(e.qt_carga_horaria_outros::numeric, 0)
       )${buscaCondEspelho}` : '';
 
     // Query única com window function para evitar double-scan do NOT EXISTS
@@ -1465,7 +1462,7 @@ app.get('/api/vinculos/filtros', async (req, res) => {
 /**
  * GET /api/vinculos/nao-alterados
  * Retorna análise de vínculos não alterados pelo projeto (comparação com espelho CNES)
- * Usa a menor competência disponível em censo.espelho_cnes_nova dinamicamente.
+ * Usa a maior competência disponível em censo.espelho_cnes_nova dinamicamente.
  * Suporta os mesmos filtros de /api/vinculos/stats:
  *   uf, macro, regional, municipio, regiao_saude_df, regiao_adm_df, estabelecimento,
  *   cbo, vinculo  → aplicados ao espelho_cnes_nova
@@ -1629,7 +1626,7 @@ app.get('/api/vinculos/nao-alterados', async (req, res) => {
     const sql = `
       WITH
       min_comp_cte AS (
-        SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova
+        SELECT MAX(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova
       ),
       espelho_min AS (
         SELECT e.*
@@ -1644,10 +1641,7 @@ app.get('/api/vinculos/nao-alterados', async (req, res) => {
           WHERE v.nu_cpf                = e.co_cpf
             AND v.co_cnes               = e.co_cnes
             AND v.nu_vinculacao::text   = e.ind_vinculacao::text
-            AND v.co_cbo_ocupacao::text = e.co_cbo::text
-            AND COALESCE(v.qt_carga_horaria_ambulatorial::numeric, 0) = COALESCE(e.qt_carga_horaria_ambulatorial::numeric, 0)
-            AND COALESCE(v.qt_carga_horaria_hospitalar::numeric, 0)   = COALESCE(e.qt_carga_hor_hosp_sus::numeric, 0)
-            AND COALESCE(v.qt_carga_horaria_outros::numeric, 0)       = COALESCE(e.qt_carga_horaria_outros::numeric, 0)${vWhereExtra}
+            AND v.co_cbo_ocupacao::text = e.co_cbo::text${vWhereExtra}
         )
       ),
       total_rec AS (SELECT COUNT(*) AS n FROM censo.recenseados_nova ${recWhere})
