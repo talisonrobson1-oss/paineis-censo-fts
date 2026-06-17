@@ -1305,9 +1305,6 @@ app.get('/api/vinculos/tabela', async (req, res) => {
           AND v.co_cnes               = e.co_cnes
           AND v.nu_vinculacao::text   = e.ind_vinculacao::text
           AND v.co_cbo_ocupacao::text = e.co_cbo::text
-          AND COALESCE(v.qt_carga_horaria_ambulatorial::numeric, 0) = COALESCE(e.qt_carga_horaria_ambulatorial::numeric, 0)
-          AND COALESCE(v.qt_carga_horaria_hospitalar::numeric, 0)   = COALESCE(e.qt_carga_hor_hosp_sus::numeric, 0)
-          AND COALESCE(v.qt_carga_horaria_outros::numeric, 0)       = COALESCE(e.qt_carga_horaria_outros::numeric, 0)
       )${buscaCondEspelho}` : '';
 
     // Query única com window function para evitar double-scan do NOT EXISTS
@@ -1644,10 +1641,7 @@ app.get('/api/vinculos/nao-alterados', async (req, res) => {
           WHERE v.nu_cpf                = e.co_cpf
             AND v.co_cnes               = e.co_cnes
             AND v.nu_vinculacao::text   = e.ind_vinculacao::text
-            AND v.co_cbo_ocupacao::text = e.co_cbo::text
-            AND COALESCE(v.qt_carga_horaria_ambulatorial::numeric, 0) = COALESCE(e.qt_carga_horaria_ambulatorial::numeric, 0)
-            AND COALESCE(v.qt_carga_horaria_hospitalar::numeric, 0)   = COALESCE(e.qt_carga_hor_hosp_sus::numeric, 0)
-            AND COALESCE(v.qt_carga_horaria_outros::numeric, 0)       = COALESCE(e.qt_carga_horaria_outros::numeric, 0)${vWhereExtra}
+            AND v.co_cbo_ocupacao::text = e.co_cbo::text${vWhereExtra}
         )
       ),
       total_rec AS (SELECT COUNT(*) AS n FROM censo.recenseados_nova ${recWhere})
