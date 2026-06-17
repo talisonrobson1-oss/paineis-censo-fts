@@ -1846,14 +1846,17 @@ function updateNaoAlteradosKPIs() {
 function renderNaoAlteradosChart() {
   if (!D || !D.naoAlterados) return;
 
-  const data = D.naoAlterados;
-  const totalRecenseados = data.total_vinculos_recenseados || 0;
-  const alterados        = data.alterados;
-  const naoAlterados     = data.nao_alterados;
+  const data           = D.naoAlterados;
+  const alterados      = data.alterados;
+  const naoAlterados   = data.nao_alterados;
+  const igualCnes      = (D.stats && D.stats.igual_cnes)   || 0;
+  const divergeCnes    = (D.stats && D.stats.diverge_cnes) || 0;
 
   destroyChart('na-bars');
   const ctx = document.getElementById('c-na-bars');
   if (!ctx) return;
+
+  const totalRecenseados = igualCnes + divergeCnes;
 
   CH['na-bars'] = new Chart(ctx, {
     type: 'bar',
@@ -1877,9 +1880,17 @@ function renderNaoAlteradosChart() {
           borderRadius: 4
         },
         {
-          label: 'Vínculos Recenseados',
-          data: [null, totalRecenseados],
-          backgroundColor: '#6c8ebf',
+          label: 'Igual ao CNES',
+          data: [null, igualCnes],
+          backgroundColor: '#3fb950',
+          stack: 'recenseados',
+          borderWidth: 0,
+          borderRadius: 0
+        },
+        {
+          label: 'Diverge do CNES',
+          data: [null, divergeCnes],
+          backgroundColor: '#f85149',
           stack: 'recenseados',
           borderWidth: 0,
           borderRadius: 4
@@ -1900,8 +1911,8 @@ function renderNaoAlteradosChart() {
           callbacks: {
             label: (ctx) => {
               const value = (ctx.parsed.x || 0).toLocaleString('pt-BR');
-              const base = data.total_espelho > 0 ? data.total_espelho : 1;
-              const pct = ((( ctx.parsed.x || 0) / base) * 100).toFixed(1);
+              const base  = data.total_espelho > 0 ? data.total_espelho : 1;
+              const pct   = (((ctx.parsed.x || 0) / base) * 100).toFixed(1);
               return ` ${ctx.dataset.label}: ${value} (${pct}%)`;
             }
           }
