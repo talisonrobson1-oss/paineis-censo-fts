@@ -467,11 +467,6 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
     <div class="kpi" style="--ca:var(--red)"><div class="kpi-lbl">Exclusões</div><div class="kpi-val" id="k-exc">—</div><div class="kpi-sub" id="k-exc-pct"></div></div>
   </div>
 
-  <!-- Linha 3: Situação CNES -->
-  <div class="kpi-grid-linha3">
-    <div class="kpi" style="--ca:var(--green)"><div class="kpi-lbl">Igual ao CNES</div><div class="kpi-val" id="k-cnes-s">—</div><div class="kpi-sub" id="k-cnes-s-pct"></div></div>
-    <div class="kpi" style="--ca:var(--red)"><div class="kpi-lbl">Diverge do CNES</div><div class="kpi-val" id="k-cnes-n">—</div><div class="kpi-sub" id="k-cnes-n-pct"></div></div>
-  </div>
 
   <!-- CBO e Vínculo (movido para cá) -->
   <div class="sec-label">Ocupação &amp; Tipo de Vínculo</div>
@@ -1446,11 +1441,6 @@ function updateKPIs(){
   set('k-exc', fmt(stats.exclusoes));
   set('k-exc-pct', pct(stats.exclusoes)+' do total');
   
-  set('k-cnes-s', fmt(stats.igual_cnes));
-  set('k-cnes-s-pct', pct(stats.igual_cnes)+' do total');
-  
-  set('k-cnes-n', fmt(stats.diverge_cnes));
-  set('k-cnes-n-pct', pct(stats.diverge_cnes)+' do total');
 }
 
 function set(id,v){
