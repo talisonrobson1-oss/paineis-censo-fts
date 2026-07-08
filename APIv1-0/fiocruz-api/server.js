@@ -862,15 +862,16 @@ function buildVinculosWhere(query, additionalConditions = [], startParamCount = 
 app.get('/api/vinculos/stats', async (req, res) => {
   try {
     const { whereClause, params } = buildVinculosWhere(req.query);
-    
-    const query = `
-      SELECT 
+    const andOr = whereClause ? 'AND' : 'WHERE';
+
+    const mainQuery = `
+      SELECT
         COUNT(*) as total_vinculos,
         COUNT(DISTINCT nu_cpf) as total_profissionais,
         COUNT(DISTINCT co_cnes) as total_cnes,
         ROUND(AVG(
-          COALESCE(qt_carga_horaria_ambulatorial, 0) + 
-          COALESCE(qt_carga_horaria_hospitalar, 0) + 
+          COALESCE(qt_carga_horaria_ambulatorial, 0) +
+          COALESCE(qt_carga_horaria_hospitalar, 0) +
           COALESCE(qt_carga_horaria_outros, 0)
         )) as media_carga_horaria,
         SUM(CASE WHEN no_tipo_operacao_censo = 'Inclusão' THEN 1 ELSE 0 END) as inclusoes,
@@ -881,21 +882,64 @@ app.get('/api/vinculos/stats', async (req, res) => {
       FROM censo.recenseados_nova
       ${whereClause};
     `;
-    
-    const { rows } = await pool.query(query, params);
-    const stats = rows[0];
-    
-    // Converter para números inteiros
+
+    // Indicadores de Indivíduos — cruzamento com espelho (competência mais antiga)
+    const individuosQuery = `
+      WITH min_comp AS (SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova),
+      espelho_min AS (
+        SELECT DISTINCT LPAD(co_cpf::text, 11, '0') AS co_cpf, co_cnes::text AS co_cnes
+        FROM censo.espelho_cnes_nova WHERE nu_comp = (SELECT nu_comp FROM min_comp)
+      ),
+      admissoes_base AS (
+        SELECT DISTINCT nu_cpf FROM censo.recenseados_nova
+        ${whereClause} ${andOr} no_tipo_operacao_censo = 'Inclusão'
+          AND NOT EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = nu_cpf::text AND e.co_cnes = co_cnes::text)
+      ),
+      contagem_ops AS (
+        SELECT nu_cpf, co_cnes,
+          SUM(CASE WHEN no_tipo_operacao_censo = 'Exclusão' THEN 1 ELSE 0 END) AS excl,
+          SUM(CASE WHEN no_tipo_operacao_censo != 'Exclusão' THEN 1 ELSE 0 END) AS outros
+        FROM censo.recenseados_nova
+        ${whereClause}
+        GROUP BY nu_cpf, co_cnes
+      ),
+      desligamentos_base AS (
+        SELECT DISTINCT c.nu_cpf FROM contagem_ops c
+        WHERE c.excl > 0 AND c.outros = 0
+          AND EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = c.nu_cpf::text AND e.co_cnes = c.co_cnes::text)
+      ),
+      alteracoes_ind_base AS (
+        SELECT DISTINCT nu_cpf FROM censo.recenseados_nova
+        ${whereClause} ${andOr} no_tipo_operacao_censo = 'Alteração'
+          AND EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = nu_cpf::text AND e.co_cnes = co_cnes::text)
+      )
+      SELECT
+        (SELECT COUNT(*) FROM admissoes_base)    AS admissoes,
+        (SELECT COUNT(*) FROM desligamentos_base) AS desligamentos,
+        (SELECT COUNT(*) FROM alteracoes_ind_base) AS alteracoes_individuo
+    `;
+
+    const [mainRes, indRes] = await Promise.all([
+      params.length > 0 ? pool.query(mainQuery, params) : pool.query(mainQuery),
+      params.length > 0 ? pool.query(individuosQuery, params) : pool.query(individuosQuery)
+    ]);
+
+    const stats = mainRes.rows[0];
+    const ind   = indRes.rows[0];
+
     res.json({
-      total_vinculos: parseInt(stats.total_vinculos) || 0,
-      total_profissionais: parseInt(stats.total_profissionais) || 0,
-      total_cnes: parseInt(stats.total_cnes) || 0,
-      media_carga_horaria: parseInt(stats.media_carga_horaria) || 0,
-      inclusoes: parseInt(stats.inclusoes) || 0,
-      alteracoes: parseInt(stats.alteracoes) || 0,
-      exclusoes: parseInt(stats.exclusoes) || 0,
-      igual_cnes: parseInt(stats.igual_cnes) || 0,
-      diverge_cnes: parseInt(stats.diverge_cnes) || 0
+      total_vinculos:        parseInt(stats.total_vinculos)        || 0,
+      total_profissionais:   parseInt(stats.total_profissionais)   || 0,
+      total_cnes:            parseInt(stats.total_cnes)            || 0,
+      media_carga_horaria:   parseInt(stats.media_carga_horaria)   || 0,
+      inclusoes:             parseInt(stats.inclusoes)             || 0,
+      alteracoes:            parseInt(stats.alteracoes)            || 0,
+      exclusoes:             parseInt(stats.exclusoes)             || 0,
+      igual_cnes:            parseInt(stats.igual_cnes)            || 0,
+      diverge_cnes:          parseInt(stats.diverge_cnes)          || 0,
+      admissoes:             parseInt(ind.admissoes)               || 0,
+      desligamentos:         parseInt(ind.desligamentos)           || 0,
+      alteracoes_individuo:  parseInt(ind.alteracoes_individuo)    || 0
     });
   } catch (err) {
     console.error('Erro em /api/vinculos/stats:', err);

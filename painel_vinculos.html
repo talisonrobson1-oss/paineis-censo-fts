@@ -147,6 +147,7 @@ select:focus,input.finput:focus{border-color:var(--blue);}
 main{padding:24px 32px;max-width:1600px;margin:0 auto;}
 .sec-label{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
 .sec-label::after{content:'';flex:1;height:1px;background:var(--border);}
+.subsec-label{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--blue);margin-bottom:10px;margin-top:4px;padding-left:2px;}
 
 /* KPI */
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:28px;}
@@ -447,24 +448,29 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
 
 <main>
   <div class="sec-label">Indicadores Gerais</div>
-  
-  <!-- Linha 1: Total de Vínculos Recenseados + Total no Espelho -->
+
+  <!-- ── Indicadores de Vínculos ── -->
+  <div class="subsec-label">Indicadores de Vínculos</div>
   <div class="kpi-grid-linha1">
     <div class="kpi destaque" style="--ca:var(--blue)"><div class="kpi-lbl">Total de Vínculos Recenseados</div><div class="kpi-val" id="k-total">—</div><div class="kpi-sub">no filtro atual</div></div>
     <div class="kpi destaque" style="--ca:var(--teal)"><div class="kpi-lbl">Total no Espelho</div><div class="kpi-val" id="k-espelho">—</div><div class="kpi-sub">vínculos registrados no CNES</div></div>
   </div>
-
-  <!-- Linha 2: Profissionais Únicos + Média de Carga Horária -->
-  <div class="kpi-grid-linha1">
-    <div class="kpi destaque" style="--ca:var(--purple)"><div class="kpi-lbl">Profissionais Únicos</div><div class="kpi-val" id="k-prof">—</div><div class="kpi-sub" id="k-prof-sub">por CPF completo</div></div>
-    <div class="kpi destaque" style="--ca:var(--yellow)"><div class="kpi-lbl">Média de Carga Horária</div><div class="kpi-val" id="k-ch">—</div><div class="kpi-sub">horas semanais</div></div>
-  </div>
-
-  <!-- Linha 3: Tipo de Operação -->
   <div class="kpi-grid-linha2">
     <div class="kpi" style="--ca:var(--green)"><div class="kpi-lbl">Inclusões</div><div class="kpi-val" id="k-inc">—</div><div class="kpi-sub" id="k-inc-pct"></div></div>
     <div class="kpi" style="--ca:var(--blue)"><div class="kpi-lbl">Alterações</div><div class="kpi-val" id="k-alt">—</div><div class="kpi-sub" id="k-alt-pct"></div></div>
     <div class="kpi" style="--ca:var(--red)"><div class="kpi-lbl">Exclusões</div><div class="kpi-val" id="k-exc">—</div><div class="kpi-sub" id="k-exc-pct"></div></div>
+  </div>
+
+  <!-- ── Indicadores de Indivíduos ── -->
+  <div class="subsec-label">Indicadores de Indivíduos</div>
+  <div class="kpi-grid-linha1">
+    <div class="kpi destaque" style="--ca:var(--purple)"><div class="kpi-lbl">Profissionais Únicos</div><div class="kpi-val" id="k-prof">—</div><div class="kpi-sub" id="k-prof-sub">por CPF completo</div></div>
+    <div class="kpi destaque" style="--ca:var(--yellow)"><div class="kpi-lbl">Média de Carga Horária</div><div class="kpi-val" id="k-ch">—</div><div class="kpi-sub">horas semanais</div></div>
+  </div>
+  <div class="kpi-grid-linha2">
+    <div class="kpi" style="--ca:var(--green)"><div class="kpi-lbl">Admissões</div><div class="kpi-val" id="k-admissoes">—</div><div class="kpi-sub" id="k-admissoes-sub">novos no CNES</div></div>
+    <div class="kpi" style="--ca:var(--red)"><div class="kpi-lbl">Desligamentos</div><div class="kpi-val" id="k-desligamentos">—</div><div class="kpi-sub" id="k-desligamentos-sub">todos vínculos excluídos</div></div>
+    <div class="kpi" style="--ca:var(--orange)"><div class="kpi-lbl">Alterações de Vínculos</div><div class="kpi-val" id="k-alt-ind">—</div><div class="kpi-sub" id="k-alt-ind-sub">indivíduos com vínculo alterado</div></div>
   </div>
 
 
@@ -1434,13 +1440,25 @@ function updateKPIs(){
   
   set('k-inc', fmt(stats.inclusoes));
   set('k-inc-pct', pct(stats.inclusoes)+' do total');
-  
+
   set('k-alt', fmt(stats.alteracoes));
   set('k-alt-pct', pct(stats.alteracoes)+' do total');
-  
+
   set('k-exc', fmt(stats.exclusoes));
   set('k-exc-pct', pct(stats.exclusoes)+' do total');
-  
+
+  // Indicadores de Indivíduos
+  const totalProf = stats.total_profissionais || 1;
+  const pctProf = n => totalProf ? ((n/totalProf)*100).toFixed(1)+'%' : '—';
+
+  set('k-admissoes', fmt(stats.admissoes));
+  set('k-admissoes-sub', pctProf(stats.admissoes)+' dos profissionais');
+
+  set('k-desligamentos', fmt(stats.desligamentos));
+  set('k-desligamentos-sub', pctProf(stats.desligamentos)+' dos profissionais');
+
+  set('k-alt-ind', fmt(stats.alteracoes_individuo));
+  set('k-alt-ind-sub', pctProf(stats.alteracoes_individuo)+' dos profissionais');
 }
 
 function set(id,v){
