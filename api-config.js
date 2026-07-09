@@ -38,6 +38,9 @@ const API_CONFIG = {
     VINCULOS_TABELA: '/api/vinculos/tabela',
     VINCULOS_FILTROS: '/api/vinculos/filtros',
     VINCULOS_NAO_ALTERADOS: '/api/vinculos/nao-alterados',
+    VINCULOS_INDIVIDUO_ADMISSOES:     '/api/vinculos/individuo/admissoes',
+    VINCULOS_INDIVIDUO_DESLIGAMENTOS: '/api/vinculos/individuo/desligamentos',
+    VINCULOS_INDIVIDUO_ALTERACOES:    '/api/vinculos/individuo/alteracoes',
     
     // Resolução
     RESOLUCAO_STATS: '/api/resolucao/stats',
@@ -93,7 +96,10 @@ const ENDPOINT_TIMEOUTS = {
   '/api/resolucao/stats':          180000, // 3 min — 5 queries sequenciais
   '/api/resolucao/tabela':         120000,
   '/api/vinculos/agregados':       180000,
-  '/api/vinculos/nao-alterados':   180000, // 3 min — NOT EXISTS sobre espelho completo
+  '/api/vinculos/nao-alterados':            180000, // 3 min — NOT EXISTS sobre espelho completo
+  '/api/vinculos/individuo/admissoes':      180000,
+  '/api/vinculos/individuo/desligamentos':  180000,
+  '/api/vinculos/individuo/alteracoes':     180000,
   '/api/vinculos/tabela':          600000, // 10 min — exportação de até 256k linhas (rec + espelho)
   '/api/estabelecimentos/por-municipio': 60000,
 };

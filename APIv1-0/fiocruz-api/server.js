@@ -1724,6 +1724,126 @@ app.get('/api/vinculos/nao-alterados', async (req, res) => {
   }
 });
 
+// ── Detalhe: Admissões (indivíduos novos no CNES) ────────────────────────
+app.get('/api/vinculos/individuo/admissoes', async (req, res) => {
+  try {
+    const { whereClause, params } = buildVinculosWhere(req.query);
+    const andOr = whereClause ? 'AND' : 'WHERE';
+
+    const sql = `
+      WITH min_comp AS (SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova),
+      espelho_min AS (
+        SELECT DISTINCT LPAD(co_cpf::text, 11, '0') AS co_cpf, co_cnes::text AS co_cnes
+        FROM censo.espelho_cnes_nova WHERE nu_comp = (SELECT nu_comp FROM min_comp)
+      ),
+      resultados AS (
+        SELECT DISTINCT ON (nu_cpf, co_cnes) nu_cpf, co_cnes, nome
+        FROM censo.recenseados_nova
+        ${whereClause} ${andOr} no_tipo_operacao_censo = 'Inclusão'
+          AND NOT EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = nu_cpf::text AND e.co_cnes = co_cnes::text)
+        ORDER BY nu_cpf, co_cnes
+      )
+      SELECT r.nu_cpf AS cpf, r.nome, r.co_cnes AS cnes,
+             COALESCE(est.no_fantasia, est.no_razao_social) AS estabelecimento
+      FROM resultados r
+      LEFT JOIN censo.recenseamento_nova est ON est.co_cnes = r.co_cnes
+      ORDER BY r.nome, r.co_cnes
+      LIMIT 5000
+    `;
+
+    const { rows } = params.length > 0 ? await pool.query(sql, params) : await pool.query(sql);
+    res.json({ data: rows, total: rows.length });
+  } catch (err) {
+    console.error('Erro em /api/vinculos/individuo/admissoes:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Detalhe: Desligamentos (indivíduos com todos os vínculos excluídos) ───
+app.get('/api/vinculos/individuo/desligamentos', async (req, res) => {
+  try {
+    const { whereClause, params } = buildVinculosWhere(req.query);
+
+    const sql = `
+      WITH min_comp AS (SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova),
+      espelho_min AS (
+        SELECT DISTINCT LPAD(co_cpf::text, 11, '0') AS co_cpf, co_cnes::text AS co_cnes
+        FROM censo.espelho_cnes_nova WHERE nu_comp = (SELECT nu_comp FROM min_comp)
+      ),
+      contagem_ops AS (
+        SELECT nu_cpf, co_cnes, MAX(nome) AS nome,
+          SUM(CASE WHEN no_tipo_operacao_censo = 'Exclusão' THEN 1 ELSE 0 END) AS excl,
+          SUM(CASE WHEN no_tipo_operacao_censo != 'Exclusão' THEN 1 ELSE 0 END) AS outros
+        FROM censo.recenseados_nova
+        ${whereClause}
+        GROUP BY nu_cpf, co_cnes
+      ),
+      resultados AS (
+        SELECT c.nu_cpf, c.co_cnes, c.nome
+        FROM contagem_ops c
+        WHERE c.excl > 0 AND c.outros = 0
+          AND EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = c.nu_cpf::text AND e.co_cnes = c.co_cnes::text)
+      )
+      SELECT r.nu_cpf AS cpf, r.nome, r.co_cnes AS cnes,
+             COALESCE(est.no_fantasia, est.no_razao_social) AS estabelecimento
+      FROM resultados r
+      LEFT JOIN censo.recenseamento_nova est ON est.co_cnes = r.co_cnes
+      ORDER BY r.nome, r.co_cnes
+      LIMIT 5000
+    `;
+
+    const { rows } = params.length > 0 ? await pool.query(sql, params) : await pool.query(sql);
+    res.json({ data: rows, total: rows.length });
+  } catch (err) {
+    console.error('Erro em /api/vinculos/individuo/desligamentos:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Detalhe: Alterações de vínculos ──────────────────────────────────────
+app.get('/api/vinculos/individuo/alteracoes', async (req, res) => {
+  try {
+    const { whereClause, params } = buildVinculosWhere(req.query);
+    const andOr = whereClause ? 'AND' : 'WHERE';
+
+    const sql = `
+      WITH min_comp AS (SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova),
+      espelho_min AS (
+        SELECT DISTINCT LPAD(co_cpf::text, 11, '0') AS co_cpf, co_cnes::text AS co_cnes
+        FROM censo.espelho_cnes_nova WHERE nu_comp = (SELECT nu_comp FROM min_comp)
+      ),
+      resultados AS (
+        SELECT DISTINCT ON (nu_cpf, co_cnes, co_cbo_ocupacao, nu_vinculacao)
+          nu_cpf, co_cnes, nome,
+          COALESCE(ds_cbo_ocupacao, co_cbo_ocupacao::text) AS cbo,
+          COALESCE(vinculacao, nu_vinculacao::text)        AS tipo_vinculo,
+          COALESCE(qt_carga_horaria_ambulatorial, 0)       AS ch_amb,
+          COALESCE(qt_carga_horaria_hospitalar, 0)         AS ch_hosp,
+          COALESCE(qt_carga_horaria_outros, 0)             AS ch_out
+        FROM censo.recenseados_nova
+        ${whereClause} ${andOr} no_tipo_operacao_censo = 'Alteração'
+          AND EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = nu_cpf::text AND e.co_cnes = co_cnes::text)
+        ORDER BY nu_cpf, co_cnes, co_cbo_ocupacao, nu_vinculacao
+      )
+      SELECT r.nu_cpf AS cpf, r.nome, r.co_cnes AS cnes,
+             COALESCE(est.no_fantasia, est.no_razao_social) AS estabelecimento,
+             r.cbo, r.tipo_vinculo,
+             r.ch_amb, r.ch_hosp, r.ch_out,
+             (r.ch_amb + r.ch_hosp + r.ch_out) AS ch_total
+      FROM resultados r
+      LEFT JOIN censo.recenseamento_nova est ON est.co_cnes = r.co_cnes
+      ORDER BY r.nome, r.co_cnes, r.cbo
+      LIMIT 5000
+    `;
+
+    const { rows } = params.length > 0 ? await pool.query(sql, params) : await pool.query(sql);
+    res.json({ data: rows, total: rows.length });
+  } catch (err) {
+    console.error('Erro em /api/vinculos/individuo/alteracoes:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ========================================
 // ROTAS - PAINEL DE RESOLUÇÃO
 // ========================================

@@ -148,6 +148,27 @@ main{padding:24px 32px;max-width:1600px;margin:0 auto;}
 .sec-label{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:8px;}
 .sec-label::after{content:'';flex:1;height:1px;background:var(--border);}
 .subsec-label{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--blue);margin-bottom:10px;margin-top:4px;padding-left:2px;}
+/* MODAL INDIVÍDUOS */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9000;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;width:min(94vw,940px);max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.modal-title{font-size:13px;font-weight:700;color:var(--text);}
+.modal-close{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px;border-radius:6px;line-height:1;}
+.modal-close:hover{background:var(--border);color:var(--text);}
+.modal-body{overflow-y:auto;padding:20px 22px;flex:1;}
+.modal-loading{display:flex;align-items:center;gap:12px;color:var(--muted);padding:30px 0;}
+.modal-spin{width:20px;height:20px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:modal-spin .8s linear infinite;flex-shrink:0;}
+@keyframes modal-spin{to{transform:rotate(360deg);}}
+.modal-count{font-size:11px;color:var(--muted);margin-bottom:10px;}
+.modal-table{width:100%;border-collapse:collapse;font-size:12px;}
+.modal-table th{background:var(--bg);color:var(--muted);font-weight:600;text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);position:sticky;top:0;white-space:nowrap;}
+.modal-table td{padding:7px 10px;border-bottom:1px solid var(--border);color:var(--text);}
+.modal-table tr:last-child td{border-bottom:none;}
+.modal-table tr:hover td{background:var(--bg);}
+.kpi-detail-btn{position:absolute;bottom:10px;right:10px;background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:10px;padding:3px 8px;cursor:pointer;display:flex;align-items:center;gap:3px;transition:all .15s;line-height:1.4;}
+.kpi-detail-btn:hover{border-color:var(--blue);color:var(--blue);background:rgba(74,144,226,.06);}
+.kpi-detail-btn svg{width:11px;height:11px;flex-shrink:0;}
 
 /* KPI */
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:28px;}
@@ -468,9 +489,9 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
     <div class="kpi destaque" style="--ca:var(--yellow)"><div class="kpi-lbl">Média de Carga Horária</div><div class="kpi-val" id="k-ch">—</div><div class="kpi-sub">horas semanais</div></div>
   </div>
   <div class="kpi-grid-linha2">
-    <div class="kpi" style="--ca:var(--green)"><div class="kpi-lbl">Admissões</div><div class="kpi-val" id="k-admissoes">—</div><div class="kpi-sub" id="k-admissoes-sub">novos no CNES</div></div>
-    <div class="kpi" style="--ca:var(--red)"><div class="kpi-lbl">Desligamentos</div><div class="kpi-val" id="k-desligamentos">—</div><div class="kpi-sub" id="k-desligamentos-sub">todos vínculos excluídos</div></div>
-    <div class="kpi" style="--ca:var(--orange)"><div class="kpi-lbl">Alterações de Vínculos</div><div class="kpi-val" id="k-alt-ind">—</div><div class="kpi-sub" id="k-alt-ind-sub">indivíduos com vínculo alterado</div></div>
+    <div class="kpi" style="--ca:var(--green)"><div class="kpi-lbl">Admissões</div><div class="kpi-val" id="k-admissoes">—</div><div class="kpi-sub" id="k-admissoes-sub">novos no CNES</div><button class="kpi-detail-btn" onclick="openIndividuoModal('admissoes')"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 10L10 2M5 2h5v5"/></svg>Ver</button></div>
+    <div class="kpi" style="--ca:var(--red)"><div class="kpi-lbl">Desligamentos</div><div class="kpi-val" id="k-desligamentos">—</div><div class="kpi-sub" id="k-desligamentos-sub">todos vínculos excluídos</div><button class="kpi-detail-btn" onclick="openIndividuoModal('desligamentos')"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 10L10 2M5 2h5v5"/></svg>Ver</button></div>
+    <div class="kpi" style="--ca:var(--orange)"><div class="kpi-lbl">Alterações de Vínculos</div><div class="kpi-val" id="k-alt-ind">—</div><div class="kpi-sub" id="k-alt-ind-sub">indivíduos com vínculo alterado</div><button class="kpi-detail-btn" onclick="openIndividuoModal('alteracoes')"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 10L10 2M5 2h5v5"/></svg>Ver</button></div>
   </div>
 
 
@@ -2158,9 +2179,91 @@ function srt(idx){
 
 
 // ==========================================
+// MODAIS DE DETALHE — INDICADORES DE INDIVÍDUOS
+// ==========================================
+const MODAL_CFG = {
+  admissoes: {
+    titulo: 'Admissões — Profissionais novos no CNES',
+    endpoint: '/api/vinculos/individuo/admissoes',
+    cols: ['CPF','Nome','CNES','Estabelecimento'],
+    keys: ['cpf','nome','cnes','estabelecimento']
+  },
+  desligamentos: {
+    titulo: 'Desligamentos — Profissionais com todos os vínculos excluídos',
+    endpoint: '/api/vinculos/individuo/desligamentos',
+    cols: ['CPF','Nome','CNES','Estabelecimento'],
+    keys: ['cpf','nome','cnes','estabelecimento']
+  },
+  alteracoes: {
+    titulo: 'Alterações de Vínculos — Profissionais com vínculo alterado',
+    endpoint: '/api/vinculos/individuo/alteracoes',
+    cols: ['CPF','Nome','CNES','Estabelecimento','CBO','Tipo Vínculo','CH Amb','CH Hosp','CH Out','CH Total'],
+    keys: ['cpf','nome','cnes','estabelecimento','cbo','tipo_vinculo','ch_amb','ch_hosp','ch_out','ch_total']
+  }
+};
+
+async function openIndividuoModal(tipo) {
+  const cfg = MODAL_CFG[tipo];
+  if (!cfg) return;
+  const overlay   = document.getElementById('modal-individuo');
+  const titleEl   = document.getElementById('modal-individuo-title');
+  const loadingEl = document.getElementById('modal-individuo-loading');
+  const contentEl = document.getElementById('modal-individuo-content');
+
+  titleEl.textContent  = cfg.titulo;
+  contentEl.innerHTML  = '';
+  loadingEl.style.display = 'flex';
+  overlay.classList.add('open');
+
+  try {
+    const result = await apiRequest(cfg.endpoint, activeFilters);
+    loadingEl.style.display = 'none';
+    if (!result.success) {
+      contentEl.innerHTML = `<p style="color:var(--red)">Erro ao carregar dados: ${result.error}</p>`;
+      return;
+    }
+    const rows = result.data.data || [];
+    const fmt  = v => (v === null || v === undefined) ? '—' : v;
+    contentEl.innerHTML = `
+      <div class="modal-count">${rows.length.toLocaleString('pt-BR')} registro(s) encontrado(s)</div>
+      <table class="modal-table">
+        <thead><tr>${cfg.cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map(row=>`<tr>${cfg.keys.map(k=>`<td>${fmt(row[k])}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>`;
+  } catch (err) {
+    loadingEl.style.display = 'none';
+    contentEl.innerHTML = `<p style="color:var(--red)">Erro inesperado: ${err.message}</p>`;
+  }
+}
+
+function closeIndividuoModal() {
+  document.getElementById('modal-individuo').classList.remove('open');
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeIndividuoModal();
+});
+
+// ==========================================
 // INICIAR QUANDO PÁGINA CARREGAR
 // ==========================================
-document.addEventListener('DOMContentLoaded', loadDataFromAPI);   
+document.addEventListener('DOMContentLoaded', loadDataFromAPI);
 </script>
+
+<!-- Modal de detalhe dos Indicadores de Indivíduos -->
+<div id="modal-individuo" class="modal-overlay" onclick="if(event.target===this)closeIndividuoModal()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-individuo-title">Detalhe</div>
+      <button class="modal-close" onclick="closeIndividuoModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="modal-individuo-loading" class="modal-loading" style="display:none">
+        <div class="modal-spin"></div><span>Consultando banco de dados...</span>
+      </div>
+      <div id="modal-individuo-content"></div>
+    </div>
+  </div>
+</div>
 </body>
 </html>
