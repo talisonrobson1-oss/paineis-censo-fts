@@ -884,16 +884,19 @@ app.get('/api/vinculos/stats', async (req, res) => {
     `;
 
     // Indicadores de Indivíduos — cruzamento com espelho (competência mais antiga)
+    // Nota: alias 'cnes' (não 'co_cnes') em espelho_min evita ambiguidade no NOT EXISTS/EXISTS
+    // onde co_cnes sem qualificador poderia ser resolvido como espelho_min.co_cnes (tautologia),
+    // tornando o filtro de CNES ineficaz e fazendo a busca por CPF global.
     const individuosQuery = `
       WITH min_comp AS (SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova),
       espelho_min AS (
-        SELECT DISTINCT LPAD(co_cpf::text, 11, '0') AS co_cpf, co_cnes::text AS co_cnes
+        SELECT DISTINCT LPAD(co_cpf::text, 11, '0') AS co_cpf, co_cnes::text AS cnes
         FROM censo.espelho_cnes_nova WHERE nu_comp = (SELECT nu_comp FROM min_comp)
       ),
       admissoes_base AS (
         SELECT DISTINCT nu_cpf FROM censo.recenseados_nova
         ${whereClause} ${andOr} no_tipo_operacao_censo = 'Inclusão'
-          AND NOT EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = nu_cpf::text AND e.co_cnes = co_cnes::text)
+          AND NOT EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = nu_cpf::text AND e.cnes = co_cnes::text)
       ),
       contagem_ops AS (
         SELECT nu_cpf, co_cnes,
@@ -906,16 +909,16 @@ app.get('/api/vinculos/stats', async (req, res) => {
       desligamentos_base AS (
         SELECT DISTINCT c.nu_cpf FROM contagem_ops c
         WHERE c.excl > 0 AND c.outros = 0
-          AND EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = c.nu_cpf::text AND e.co_cnes = c.co_cnes::text)
+          AND EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = c.nu_cpf::text AND e.cnes = c.co_cnes::text)
       ),
       alteracoes_ind_base AS (
         SELECT DISTINCT nu_cpf FROM censo.recenseados_nova
         ${whereClause} ${andOr} no_tipo_operacao_censo = 'Alteração'
-          AND EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = nu_cpf::text AND e.co_cnes = co_cnes::text)
+          AND EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = nu_cpf::text AND e.cnes = co_cnes::text)
       )
       SELECT
-        (SELECT COUNT(*) FROM admissoes_base)    AS admissoes,
-        (SELECT COUNT(*) FROM desligamentos_base) AS desligamentos,
+        (SELECT COUNT(*) FROM admissoes_base)     AS admissoes,
+        (SELECT COUNT(*) FROM desligamentos_base)  AS desligamentos,
         (SELECT COUNT(*) FROM alteracoes_ind_base) AS alteracoes_individuo
     `;
 
@@ -1733,14 +1736,14 @@ app.get('/api/vinculos/individuo/admissoes', async (req, res) => {
     const sql = `
       WITH min_comp AS (SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova),
       espelho_min AS (
-        SELECT DISTINCT LPAD(co_cpf::text, 11, '0') AS co_cpf, co_cnes::text AS co_cnes
+        SELECT DISTINCT LPAD(co_cpf::text, 11, '0') AS co_cpf, co_cnes::text AS cnes
         FROM censo.espelho_cnes_nova WHERE nu_comp = (SELECT nu_comp FROM min_comp)
       ),
       resultados AS (
         SELECT DISTINCT ON (nu_cpf, co_cnes) nu_cpf, co_cnes, nome
         FROM censo.recenseados_nova
         ${whereClause} ${andOr} no_tipo_operacao_censo = 'Inclusão'
-          AND NOT EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = nu_cpf::text AND e.co_cnes = co_cnes::text)
+          AND NOT EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = nu_cpf::text AND e.cnes = co_cnes::text)
         ORDER BY nu_cpf, co_cnes
       )
       SELECT r.nu_cpf AS cpf, r.nome, r.co_cnes AS cnes,
@@ -1767,7 +1770,7 @@ app.get('/api/vinculos/individuo/desligamentos', async (req, res) => {
     const sql = `
       WITH min_comp AS (SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova),
       espelho_min AS (
-        SELECT DISTINCT LPAD(co_cpf::text, 11, '0') AS co_cpf, co_cnes::text AS co_cnes
+        SELECT DISTINCT LPAD(co_cpf::text, 11, '0') AS co_cpf, co_cnes::text AS cnes
         FROM censo.espelho_cnes_nova WHERE nu_comp = (SELECT nu_comp FROM min_comp)
       ),
       contagem_ops AS (
@@ -1782,7 +1785,7 @@ app.get('/api/vinculos/individuo/desligamentos', async (req, res) => {
         SELECT c.nu_cpf, c.co_cnes, c.nome
         FROM contagem_ops c
         WHERE c.excl > 0 AND c.outros = 0
-          AND EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = c.nu_cpf::text AND e.co_cnes = c.co_cnes::text)
+          AND EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = c.nu_cpf::text AND e.cnes = c.co_cnes::text)
       )
       SELECT r.nu_cpf AS cpf, r.nome, r.co_cnes AS cnes,
              COALESCE(est.no_fantasia, est.no_razao_social) AS estabelecimento
@@ -1809,7 +1812,7 @@ app.get('/api/vinculos/individuo/alteracoes', async (req, res) => {
     const sql = `
       WITH min_comp AS (SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova),
       espelho_min AS (
-        SELECT DISTINCT LPAD(co_cpf::text, 11, '0') AS co_cpf, co_cnes::text AS co_cnes
+        SELECT DISTINCT LPAD(co_cpf::text, 11, '0') AS co_cpf, co_cnes::text AS cnes
         FROM censo.espelho_cnes_nova WHERE nu_comp = (SELECT nu_comp FROM min_comp)
       ),
       resultados AS (
@@ -1822,7 +1825,7 @@ app.get('/api/vinculos/individuo/alteracoes', async (req, res) => {
           COALESCE(qt_carga_horaria_outros, 0)             AS ch_out
         FROM censo.recenseados_nova
         ${whereClause} ${andOr} no_tipo_operacao_censo = 'Alteração'
-          AND EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = nu_cpf::text AND e.co_cnes = co_cnes::text)
+          AND EXISTS (SELECT 1 FROM espelho_min e WHERE e.co_cpf = nu_cpf::text AND e.cnes = co_cnes::text)
         ORDER BY nu_cpf, co_cnes, co_cbo_ocupacao, nu_vinculacao
       )
       SELECT r.nu_cpf AS cpf, r.nome, r.co_cnes AS cnes,
