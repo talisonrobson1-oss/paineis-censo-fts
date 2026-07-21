@@ -863,22 +863,12 @@
   <!-- KPIs -->
   <div class="section-label">Indicadores Gerais</div>
   
-  <!-- Primeira linha: Estabelecimentos, Vínculos e Vínculos Recenseados -->
-  <div class="kpi-row primeira-linha" style="grid-template-columns:1fr 1fr 1fr;">
+  <!-- Primeira linha: Estabelecimentos -->
+  <div class="kpi-row primeira-linha">
     <div class="kpi-card kpi-primary" style="--card-accent: var(--accent)">
       <div class="kpi-label">Estabelecimentos</div>
       <div class="kpi-value" id="kpi-total">—</div>
       <div class="kpi-sub">no filtro atual</div>
-    </div>
-    <div class="kpi-card kpi-primary" style="--card-accent: var(--accent3)">
-      <div class="kpi-label">Total de Vínculos</div>
-      <div class="kpi-value" id="kpi-vinculos">—</div>
-      <div class="kpi-sub">soma dos estabelecimentos</div>
-    </div>
-    <div class="kpi-card kpi-primary" style="--card-accent: var(--accent2)">
-      <div class="kpi-label">Total de Vínculos Recenseados</div>
-      <div class="kpi-value" id="kpi-vinculos-recenseados">—</div>
-      <div class="kpi-sub">registros em recenseados_nova</div>
     </div>
   </div>
 
@@ -1525,9 +1515,7 @@ function updateKPIs() {
   const fmt = n => (n || 0).toLocaleString('pt-BR');
   
   set('kpi-total', fmt(D.stats.total_estabelecimentos));
-  set('kpi-vinculos', fmt(D.stats.total_vinculos || 0));
-  set('kpi-vinculos-recenseados', fmt(D.stats.total_vinculos_recenseados || 0));
-  
+
   // KPIs de abordagem (Não Abordados = "Não Iniciado"; Abordados = demais situações)
   if (D.situacoes && D.situacoes.length > 0) {
     const { total, naoAbordados, abordados } = calcAbordagem();
