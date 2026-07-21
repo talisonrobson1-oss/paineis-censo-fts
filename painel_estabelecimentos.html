@@ -404,6 +404,26 @@
     background: var(--border);
   }
 
+  /* ABORDAGEM (KPIs + gráfico de rosca) */
+  .abordagem-grid {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 16px;
+    margin-bottom: 28px;
+    align-items: stretch;
+  }
+
+  .abordagem-grid .chart-card {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .chart-wrap.abordagem {
+    flex: 1;
+    min-height: 320px;
+    height: auto;
+  }
+
   /* KPI CARDS */
   .kpi-grid {
     display: grid;
@@ -729,7 +749,7 @@
   }
 
   @media (max-width: 900px) {
-    .charts-grid, .charts-grid.three { grid-template-columns: 1fr; }
+    .charts-grid, .charts-grid.three, .abordagem-grid { grid-template-columns: 1fr; }
     .chart-card.wide { grid-column: span 1; }
     main { padding: 16px; }
     .fbar { padding: 12px 16px; }
@@ -862,9 +882,34 @@
     </div>
   </div>
 
-  <!-- Segunda linha: Situações ordenadas por quantidade (decrescente) -->
-  <div class="kpi-row segunda-linha" id="kpi-situacoes">
-    <!-- Cards de situação serão inseridos dinamicamente -->
+  <!-- Abordagem: KPIs à esquerda, gráfico de rosca à direita -->
+  <div class="abordagem-grid">
+    <div>
+      <div class="kpi-row" style="grid-template-columns:1fr 1fr;">
+        <div class="kpi-card kpi-primary" style="--card-accent: #f85149">
+          <div class="kpi-label">Não Abordados</div>
+          <div class="kpi-value" id="kpi-nao-abordados">—</div>
+          <div class="kpi-sub" id="kpi-nao-abordados-pct">—</div>
+        </div>
+        <div class="kpi-card kpi-primary" style="--card-accent: var(--accent)">
+          <div class="kpi-label">Abordados</div>
+          <div class="kpi-value" id="kpi-abordados">—</div>
+          <div class="kpi-sub" id="kpi-abordados-pct">—</div>
+        </div>
+      </div>
+
+      <div class="section-label" id="label-abordados-detalhe">Detalhamento dos Estabelecimentos Abordados</div>
+
+      <!-- Situações dos estabelecimentos abordados -->
+      <div class="kpi-row segunda-linha" id="kpi-situacoes">
+        <!-- Cards de situação serão inseridos dinamicamente -->
+      </div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title"><span style="background:var(--accent)"></span> Abordados × Não Abordados</div>
+      <div class="chart-wrap abordagem"><canvas id="chart-abordagem"></canvas></div>
+    </div>
   </div>
 
   <!-- Charts Row 1 -->
@@ -980,6 +1025,17 @@ const SITUACAO_ORDER = [
   'Não Iniciado',
   'Contato sem Sucesso'
 ];
+
+// Situação que caracteriza estabelecimento Não Abordado; as demais somam os Abordados
+const SITUACAO_NAO_ABORDADO = 'Não Iniciado';
+
+function calcAbordagem() {
+  const total = D.situacoes.reduce((s, x) => s + parseInt(x.quantidade), 0);
+  const naoAbordados = D.situacoes
+    .filter(s => s.situacao === SITUACAO_NAO_ABORDADO)
+    .reduce((s, x) => s + parseInt(x.quantidade), 0);
+  return { total, naoAbordados, abordados: total - naoAbordados };
+}
 
 // Cores fixas por situação (KPI cards e gráfico)
 const SITUACAO_COLORS = {
@@ -1472,12 +1528,29 @@ function updateKPIs() {
   set('kpi-vinculos', fmt(D.stats.total_vinculos || 0));
   set('kpi-vinculos-recenseados', fmt(D.stats.total_vinculos_recenseados || 0));
   
-  // Criar cards de situação com cores fixas por status
+  // KPIs de abordagem (Não Abordados = "Não Iniciado"; Abordados = demais situações)
+  if (D.situacoes && D.situacoes.length > 0) {
+    const { total, naoAbordados, abordados } = calcAbordagem();
+    const pct = n => total > 0 ? ((n / total) * 100).toFixed(1) + '% do total' : '—';
+    set('kpi-nao-abordados', fmt(naoAbordados));
+    set('kpi-nao-abordados-pct', pct(naoAbordados));
+    set('kpi-abordados', fmt(abordados));
+    set('kpi-abordados-pct', pct(abordados));
+
+    const label = document.getElementById('label-abordados-detalhe');
+    if (label) {
+      const now = new Date();
+      const mes = now.toLocaleDateString('pt-BR', { month: 'long' });
+      label.textContent = `Detalhamento dos Estabelecimentos Abordados até ${mes.charAt(0).toUpperCase() + mes.slice(1)} / ${now.getFullYear()}`;
+    }
+  }
+
+  // Criar cards de situação com cores fixas por status (exceto Não Iniciado, já coberto por "Não Abordados")
   if (D.situacoes && D.situacoes.length > 0) {
     const container = document.getElementById('kpi-situacoes');
     if (container) {
       // Ordenar pela ordem canônica; situações não mapeadas vão para o final
-      const sorted = [...D.situacoes].sort((a, b) => {
+      const sorted = [...D.situacoes].filter(s => s.situacao !== SITUACAO_NAO_ABORDADO).sort((a, b) => {
         const ai = SITUACAO_ORDER.indexOf(a.situacao);
         const bi = SITUACAO_ORDER.indexOf(b.situacao);
         if (ai === -1 && bi === -1) return parseInt(b.quantidade) - parseInt(a.quantidade);
@@ -1526,7 +1599,58 @@ function renderCharts() {
   if (!D) return;
   
   console.log('📊 Renderizando gráficos...');
-  
+
+  // Gráfico 0: Abordados × Não Abordados (rosca)
+  if (D.situacoes && D.situacoes.length > 0) {
+    const ctx = document.getElementById('chart-abordagem');
+    if (ctx) {
+      const { total, naoAbordados, abordados } = calcAbordagem();
+      const pctLabel = n => total > 0 ? (n / total * 100).toFixed(1).replace('.', ',') + '%' : '';
+      destroyChart('abordagem');
+      CH['abordagem'] = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: [`Abordados — ${pctLabel(abordados)}`, `Não Abordados — ${pctLabel(naoAbordados)}`],
+          datasets: [{
+            data: [abordados, naoAbordados],
+            backgroundColor: ['#4a90e2', '#f85149'],
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '55%',
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { color: '#dce8f4', padding: 16 }
+            },
+            tooltip: {
+              callbacks: {
+                label: c => ` ${c.parsed.toLocaleString('pt-BR')} estabelecimentos`
+              }
+            }
+          }
+        },
+        plugins: [{
+          id: 'centerTextAbordagem',
+          afterDraw(chart) {
+            const { ctx: c, chartArea } = chart;
+            if (!chartArea) return;
+            c.save();
+            c.font = '600 13px "Segoe UI", sans-serif';
+            c.fillStyle = '#7a9ab8';
+            c.textAlign = 'center';
+            c.textBaseline = 'middle';
+            c.fillText('ESTABELECIMENTOS', (chartArea.left + chartArea.right) / 2, (chartArea.top + chartArea.bottom) / 2);
+            c.restore();
+          }
+        }]
+      });
+    }
+  }
+
   // Gráfico 1: Situação (barras verticais — ordem canônica com cores fixas)
   if (D.situacoes && D.situacoes.length > 0) {
     const ctx = document.getElementById('chart-situacao');
