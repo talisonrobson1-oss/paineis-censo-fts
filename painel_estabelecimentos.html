@@ -407,7 +407,7 @@
   /* ABORDAGEM (KPIs + gráfico de rosca) */
   .abordagem-grid {
     display: grid;
-    grid-template-columns: 1fr 380px;
+    grid-template-columns: minmax(0, 1.2fr) minmax(340px, 480px);
     gap: 16px;
     margin-bottom: 28px;
     align-items: stretch;
@@ -420,7 +420,7 @@
 
   .chart-wrap.abordagem {
     flex: 1;
-    min-height: 320px;
+    min-height: 460px;
     height: auto;
   }
 
@@ -748,8 +748,12 @@
     border-top: 1px solid var(--border);
   }
 
+  @media (max-width: 1100px) {
+    .abordagem-grid { grid-template-columns: 1fr; }
+  }
+
   @media (max-width: 900px) {
-    .charts-grid, .charts-grid.three, .abordagem-grid { grid-template-columns: 1fr; }
+    .charts-grid, .charts-grid.three { grid-template-columns: 1fr; }
     .chart-card.wide { grid-column: span 1; }
     main { padding: 16px; }
     .fbar { padding: 12px 16px; }
@@ -862,20 +866,17 @@
 <main>
   <!-- KPIs -->
   <div class="section-label">Indicadores Gerais</div>
-  
-  <!-- Primeira linha: Estabelecimentos -->
-  <div class="kpi-row primeira-linha">
-    <div class="kpi-card kpi-primary" style="--card-accent: var(--accent)">
-      <div class="kpi-label">Estabelecimentos</div>
-      <div class="kpi-value" id="kpi-total">—</div>
-      <div class="kpi-sub">no filtro atual</div>
-    </div>
-  </div>
 
-  <!-- Abordagem: KPIs à esquerda, gráfico de rosca à direita -->
+  <!-- Abordagem: KPIs à esquerda, gráfico de rosca à direita (alinhado da 1ª à última linha) -->
   <div class="abordagem-grid">
     <div>
-      <div class="kpi-row" style="grid-template-columns:1fr 1fr;">
+      <!-- Primeira linha: Estabelecimentos, Não Abordados e Abordados -->
+      <div class="kpi-row primeira-linha" style="grid-template-columns:1fr 1fr 1fr;">
+        <div class="kpi-card kpi-primary" style="--card-accent: var(--accent)">
+          <div class="kpi-label">Estabelecimentos</div>
+          <div class="kpi-value" id="kpi-total">—</div>
+          <div class="kpi-sub">no filtro atual</div>
+        </div>
         <div class="kpi-card kpi-primary" style="--card-accent: #f85149">
           <div class="kpi-label">Não Abordados</div>
           <div class="kpi-value" id="kpi-nao-abordados">—</div>
