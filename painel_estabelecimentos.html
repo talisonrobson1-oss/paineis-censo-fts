@@ -719,14 +719,6 @@
   .pagination-btns button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
   .pagination-btns button:disabled { opacity: 0.3; cursor: default; }
 
-  /* RECENSEADORES RANKING */
-  .rank-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-bottom: 28px;
-  }
-
   /* FOOTER */
   footer {
     text-align: center;
@@ -737,7 +729,7 @@
   }
 
   @media (max-width: 900px) {
-    .charts-grid, .charts-grid.three, .rank-grid { grid-template-columns: 1fr; }
+    .charts-grid, .charts-grid.three { grid-template-columns: 1fr; }
     .chart-card.wide { grid-column: span 1; }
     main { padding: 16px; }
     .fbar { padding: 12px 16px; }
@@ -924,19 +916,6 @@
     <div class="progress-list" id="progress-regional"></div>
   </div>
 
-  <!-- Recenseadores -->
-  <div class="section-label">Desempenho por Recenseador</div>
-  <div class="rank-grid">
-    <div class="chart-card">
-      <div class="chart-title"><span style="background:var(--accent)"></span> Estabelecimentos por Recenseador</div>
-      <div class="chart-wrap tall"><canvas id="chart-recenseador"></canvas></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title"><span style="background:var(--concluido)"></span> % Concluído por Recenseador</div>
-      <div class="chart-wrap tall"><canvas id="chart-recenseador-pct"></canvas></div>
-    </div>
-  </div>
-
   <!-- Table -->
   <div class="section-label">Registros</div>
   <div class="table-wrap">
@@ -1097,14 +1076,13 @@ async function loadDataFromAPI() {
     
     showLoading('Carregando dados...');
     
-    const [statsRes, situacaoRes, ufRes, esferaRes, macroRes, regionalRes, recenseadorRes, filtrosRes, municipioRes, filtrosDFRes] = await Promise.all([
+    const [statsRes, situacaoRes, ufRes, esferaRes, macroRes, regionalRes, filtrosRes, municipioRes, filtrosDFRes] = await Promise.all([
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_STATS),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_SITUACAO),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_UF),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_ESFERA),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_MACRO),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_REGIONAL),
-      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_RECENSEADOR),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_FILTROS),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_MUNICIPIO),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_FILTROS_DF)
@@ -1122,7 +1100,6 @@ async function loadDataFromAPI() {
       macros: macroRes.success ? macroRes.data : [],
       regionais: regionalRes.success ? regionalRes.data : [],
       municipios: municipioRes.success ? municipioRes.data : [],
-      recenseadores: recenseadorRes.success ? recenseadorRes.data : [],
       filtros: filtrosRes.success ? filtrosRes.data : null,
       filtrosDF: filtrosDFRes.success ? filtrosDFRes.data : null
     };
@@ -1798,87 +1775,6 @@ function renderCharts() {
           </div>
         `;
       }).join('');
-    }
-  }
-  
-  // Gráfico 6: Estabelecimentos por Recenseador (quantidade)
-  if (D.recenseadores && D.recenseadores.length > 0) {
-    const ctx = document.getElementById('chart-recenseador');
-    if (ctx) {
-      const sorted = [...D.recenseadores].sort((a, b) => parseInt(b.total) - parseInt(a.total)).slice(0, 15);
-      destroyChart('recenseador');
-      CH['recenseador'] = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: sorted.map(r => r.recenseador),
-          datasets: [{
-            label: 'Total',
-            data: sorted.map(r => parseInt(r.total)),
-            backgroundColor: '#4a90e2',
-            borderRadius: 4
-          }]
-        },
-        options: {
-          indexAxis: 'y',
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false }
-          },
-          scales: {
-            x: {
-              ticks: { color: '#7a9ab8' },
-              grid: { color: '#2a4270' }
-            },
-            y: {
-              ticks: { color: '#7a9ab8', font: { size: 9 } },
-              grid: { color: '#2a4270' }
-            }
-          }
-        }
-      });
-    }
-  }
-  
-  // Gráfico 7: % Concluído por Recenseador
-  if (D.recenseadores && D.recenseadores.length > 0) {
-
-    const ctx = document.getElementById('chart-recenseador-pct');
-    if (ctx) {
-      const sorted = [...D.recenseadores]
-        .filter(r => parseInt(r.total) >= 10)
-        .sort((a, b) => parseFloat(b.percentual) - parseFloat(a.percentual))
-        .slice(0, 15);
-      destroyChart('recenseador-pct');
-      CH['recenseador-pct'] = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: sorted.map(r => r.recenseador),
-          datasets: [{
-            label: '% Concluído',
-            data: sorted.map(r => parseFloat(r.percentual)),
-            backgroundColor: '#3fb950',
-            borderRadius: 4
-          }]
-        },
-        options: {
-          indexAxis: 'y',
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            x: {
-              max: 100,
-              ticks: { color: '#7a9ab8', callback: v => v + '%' },
-              grid: { color: '#2a4270' }
-            },
-            y: {
-              ticks: { color: '#7a9ab8', font: { size: 9 } },
-              grid: { color: '#2a4270' }
-            }
-          }
-        }
-      });
     }
   }
   
