@@ -356,6 +356,36 @@ app.get('/api/estabelecimentos/por-esfera', async (req, res) => {
 });
 
 /**
+ * GET /api/estabelecimentos/por-sus
+ */
+app.get('/api/estabelecimentos/por-sus', async (req, res) => {
+  try {
+    const { whereClause, params } = buildEstabelecimentosWhere(req.query);
+
+    const query = `
+      SELECT
+        CASE
+          WHEN vinculado_sus = 'S' THEN 'Sim'
+          WHEN vinculado_sus = 'N' THEN 'Não'
+          ELSE 'Não informado'
+        END as vinculo_sus,
+        COUNT(*) as quantidade,
+        ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) as percentual
+      FROM censo.recenseamento_nova
+      ${whereClause}
+      GROUP BY vinculado_sus
+      ORDER BY quantidade DESC;
+    `;
+
+    const { rows } = await pool.query(query, params);
+    res.json(rows);
+  } catch (err) {
+    console.error('Erro em /api/estabelecimentos/por-sus:', err);
+    res.status(500).json({ error: 'Erro ao buscar dados por vínculo SUS', details: err.message });
+  }
+});
+
+/**
  * GET /api/estabelecimentos/por-macro
  */
 app.get('/api/estabelecimentos/por-macro', async (req, res) => {

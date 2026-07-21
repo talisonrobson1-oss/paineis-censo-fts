@@ -905,7 +905,7 @@
 
   <!-- Charts Row 1 -->
   <div class="section-label">Situação do Recenseamento</div>
-  <div class="charts-grid">
+  <div class="charts-grid three">
     <div class="chart-card">
       <div class="chart-title"><span></span> Distribuição por Situação</div>
       <div class="chart-wrap"><canvas id="chart-situacao"></canvas></div>
@@ -913,6 +913,10 @@
     <div class="chart-card">
       <div class="chart-title"><span style="background:var(--accent2)"></span> Esfera Administrativa</div>
       <div class="chart-wrap"><canvas id="chart-esfera"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title"><span style="background:#3fb950"></span> Vínculo com o SUS</div>
+      <div class="chart-wrap"><canvas id="chart-sus"></canvas></div>
     </div>
   </div>
 
@@ -1123,11 +1127,12 @@ async function loadDataFromAPI() {
     
     showLoading('Carregando dados...');
     
-    const [statsRes, situacaoRes, ufRes, esferaRes, macroRes, regionalRes, filtrosRes, municipioRes, filtrosDFRes] = await Promise.all([
+    const [statsRes, situacaoRes, ufRes, esferaRes, susRes, macroRes, regionalRes, filtrosRes, municipioRes, filtrosDFRes] = await Promise.all([
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_STATS),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_SITUACAO),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_UF),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_ESFERA),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_SUS),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_MACRO),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_REGIONAL),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_FILTROS),
@@ -1144,6 +1149,7 @@ async function loadDataFromAPI() {
       situacoes: situacaoRes.data,
       ufs: ufRes.data,
       esferas: esferaRes.success ? esferaRes.data : [],
+      sus: susRes.success ? susRes.data : [],
       macros: macroRes.success ? macroRes.data : [],
       regionais: regionalRes.success ? regionalRes.data : [],
       municipios: municipioRes.success ? municipioRes.data : [],
@@ -1471,11 +1477,12 @@ async function reloadWithFilters() {
     updateFilterBadge();
 
     // Recarregar todos os dados
-    const [statsRes, situacaoRes, ufRes, esferaRes, macroRes, regionalRes, municipioRes] = await Promise.all([
+    const [statsRes, situacaoRes, ufRes, esferaRes, susRes, macroRes, regionalRes, municipioRes] = await Promise.all([
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_STATS + urlSuffix),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_SITUACAO + urlSuffix),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_UF + urlSuffix),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_ESFERA + urlSuffix),
+      apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_SUS + urlSuffix),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_MACRO + urlSuffix),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_REGIONAL + urlSuffix),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_POR_MUNICIPIO + urlSuffix)
@@ -1486,6 +1493,7 @@ async function reloadWithFilters() {
     D.situacoes = situacaoRes.success ? situacaoRes.data : D.situacoes;
     D.ufs = ufRes.success ? ufRes.data : D.ufs;
     D.esferas = esferaRes.success ? esferaRes.data : D.esferas;
+    D.sus = susRes.success ? susRes.data : D.sus;
     D.macros = macroRes.success ? macroRes.data : D.macros;
     D.regionais = regionalRes.success ? regionalRes.data : D.regionais;
     D.municipios = municipioRes.success ? municipioRes.data : D.municipios;
@@ -1687,6 +1695,51 @@ function renderCharts() {
     }
   }
   
+  // Gráfico 2b: Vínculo com o SUS (barras verticais)
+  if (D.sus && D.sus.length > 0) {
+    const ctx = document.getElementById('chart-sus');
+    if (ctx) {
+      const sorted = [...D.sus].sort((a, b) => parseInt(b.quantidade) - parseInt(a.quantidade));
+      const cores = { 'Sim': '#3fb950', 'Não': '#f85149', 'Não informado': '#7a9ab8' };
+
+      destroyChart('sus');
+      CH['sus'] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: sorted.map(s => s.vinculo_sus),
+          datasets: [{
+            data: sorted.map(s => parseInt(s.quantidade)),
+            backgroundColor: sorted.map(s => cores[s.vinculo_sus] || '#4a90e2'),
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: c => ` ${c.parsed.y.toLocaleString('pt-BR')} estabelecimentos`
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: { color: '#7a9ab8' },
+              grid: { color: '#2a4270' }
+            },
+            x: {
+              ticks: { color: '#7a9ab8' },
+              grid: { display: false }
+            }
+          }
+        }
+      });
+    }
+  }
+
   // Gráfico 2: Esfera (barras verticais ordenadas)
   if (D.esferas && D.esferas.length > 0) {
     const ctx = document.getElementById('chart-esfera');

@@ -24,6 +24,7 @@ const API_CONFIG = {
     ESTABELECIMENTOS_POR_SITUACAO: '/api/estabelecimentos/por-situacao',
     ESTABELECIMENTOS_POR_UF: '/api/estabelecimentos/por-uf',
     ESTABELECIMENTOS_POR_ESFERA: '/api/estabelecimentos/por-esfera',
+    ESTABELECIMENTOS_POR_SUS: '/api/estabelecimentos/por-sus',
     ESTABELECIMENTOS_POR_MACRO: '/api/estabelecimentos/por-macro',
     ESTABELECIMENTOS_POR_REGIONAL: '/api/estabelecimentos/por-regional',
     ESTABELECIMENTOS_POR_RECENSEADOR: '/api/estabelecimentos/por-recenseador',
