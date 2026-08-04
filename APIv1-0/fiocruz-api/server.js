@@ -1765,11 +1765,11 @@ app.get('/api/vinculos/nao-alterados', async (req, res) => {
  * - "Não Abordados" (situação = 'Não Iniciado')  → contados no espelho CNES
  *   da competência mais antiga disponível (baseline pré-censo, ex.: 202504).
  * - "Abordados" (situação != 'Não Iniciado')     → contados em recenseados_nova.
- * - Detalhamento por situação (7 situações): Concluído, Devolvido para
- *   Correção, Enviado para Validação e Em Andamento vêm de recenseados_nova;
- *   Participação Recusada, Contato sem Sucesso e Estabelecimento Inativo vêm
- *   do mesmo espelho baseline (esses estabelecimentos não têm vínculos
- *   recenseados confiáveis).
+ * - Detalhamento por situação (7 situações): apenas Concluído vem de
+ *   recenseados_nova; Devolvido para Correção, Enviado para Validação, Em
+ *   Andamento, Participação Recusada, Contato sem Sucesso e Estabelecimento
+ *   Inativo vêm do mesmo espelho baseline (esses estabelecimentos não têm
+ *   vínculos recenseados confiáveis).
  *
  * Suporta os mesmos filtros de /api/vinculos/nao-alterados.
  */
@@ -1860,8 +1860,8 @@ app.get('/api/vinculos/abordagem', async (req, res) => {
     const { whereClause: recWhere, params: recParams } = buildVinculosWhere(req.query, [], paramCount);
     const finalParams = [...allParams, ...recParams];
 
-    const situacoesRecenseados = ['Concluído', 'Devolvido para Correção', 'Enviado para Validação', 'Em Andamento'];
-    const situacoesEspelho     = ['Participação Recusada', 'Contato sem Sucesso', 'Estabelecimento Inativo'];
+    const situacoesRecenseados = ['Concluído'];
+    const situacoesEspelho     = ['Devolvido para Correção', 'Enviado para Validação', 'Em Andamento', 'Participação recusada', 'Contato sem Sucesso', 'Estabelecimento Inativo'];
 
     const totaisSql = `
       WITH

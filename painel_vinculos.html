@@ -1872,7 +1872,16 @@ function renderAbordagemVinculos() {
   }
 
   // Cards de situação (ordem canônica; situações sem registro aparecem zeradas)
-  const ORDEM = ['Concluído','Devolvido para Correção','Enviado para Validação','Em Andamento','Participação Recusada','Contato sem Sucesso','Estabelecimento Inativo'];
+  // "db" usa a grafia exata gravada em situacao_recenseamento (ex.: "recusada" em minúsculo)
+  const ORDEM = [
+    { label: 'Concluído',                 db: 'Concluído' },
+    { label: 'Devolvido para Correção',   db: 'Devolvido para Correção' },
+    { label: 'Enviado para Validação',    db: 'Enviado para Validação' },
+    { label: 'Em Andamento',              db: 'Em Andamento' },
+    { label: 'Participação Recusada',     db: 'Participação recusada' },
+    { label: 'Contato sem Sucesso',       db: 'Contato sem Sucesso' },
+    { label: 'Estabelecimento Inativo',   db: 'Estabelecimento Inativo' }
+  ];
   const CORES = {
     'Concluído':'#3fb950', 'Em Andamento':'#ff8c42', 'Enviado para Validação':'#f85149',
     'Devolvido para Correção':'#9b59b6', 'Participação Recusada':'#d29922',
@@ -1886,12 +1895,12 @@ function renderAbordagemVinculos() {
 
   const container = document.getElementById('kpi-situacoes-vinc');
   if (container) {
-    container.innerHTML = ORDEM.map(sit => {
-      const qtd = porSituacao[sit] || 0;
-      const cor = CORES[sit] || '#4a90e2';
+    container.innerHTML = ORDEM.map(({ label, db }) => {
+      const qtd = porSituacao[db] || 0;
+      const cor = CORES[label] || '#4a90e2';
       return `
         <div class="kpi" style="--ca:${cor}">
-          <div class="kpi-lbl">${sit}</div>
+          <div class="kpi-lbl">${label}</div>
           <div class="kpi-val">${fmt(qtd)}</div>
           <div class="kpi-sub">${pctAbordados(qtd)}</div>
         </div>
