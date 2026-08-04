@@ -175,6 +175,10 @@ main{padding:24px 32px;max-width:1600px;margin:0 auto;}
 .kpi-grid-linha1{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:16px;}
 .kpi-grid-linha2{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px;}
 .kpi-grid-linha3{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:28px;}
+.abord-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(300px,420px);gap:16px;margin-bottom:16px;align-items:stretch;}
+.abord-grid .ccard{display:flex;flex-direction:column;}
+.abord-chart{flex:1;min-height:360px;height:auto;}
+@media(max-width:1100px){.abord-grid{grid-template-columns:1fr;}}
 .kpi{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;position:relative;overflow:hidden;transition:border-color .2s;}
 .kpi.destaque{padding:20px 22px;border-width:2px;}
 .kpi:hover{border-color:var(--blue);}
@@ -472,26 +476,36 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
 
   <!-- ── Indicadores de Vínculos ── -->
   <div class="subsec-label">Indicadores de Vínculos</div>
-  <div class="kpi-grid-linha1">
-    <div class="kpi destaque" style="--ca:var(--blue)"><div class="kpi-lbl">Total de Vínculos Recenseados</div><div class="kpi-val" id="k-total">—</div><div class="kpi-sub">no filtro atual</div></div>
-    <div class="kpi destaque" style="--ca:var(--teal)"><div class="kpi-lbl">Total no Espelho</div><div class="kpi-val" id="k-espelho">—</div><div class="kpi-sub">vínculos registrados no CNES</div></div>
-  </div>
-  <div class="kpi-grid-linha2">
-    <div class="kpi" style="--ca:var(--green)"><div class="kpi-lbl">Inclusões</div><div class="kpi-val" id="k-inc">—</div><div class="kpi-sub" id="k-inc-pct"></div></div>
-    <div class="kpi" style="--ca:var(--blue)"><div class="kpi-lbl">Alterações</div><div class="kpi-val" id="k-alt">—</div><div class="kpi-sub" id="k-alt-pct"></div></div>
-    <div class="kpi" style="--ca:var(--red)"><div class="kpi-lbl">Exclusões</div><div class="kpi-val" id="k-exc">—</div><div class="kpi-sub" id="k-exc-pct"></div></div>
+  <div class="abord-grid">
+    <div>
+      <div class="kpi-grid-linha1" style="grid-template-columns:repeat(3,1fr);">
+        <div class="kpi destaque" style="--ca:var(--blue)"><div class="kpi-lbl">Total de Vínculos</div><div class="kpi-val" id="k-total">—</div><div class="kpi-sub" id="k-total-sub">—</div></div>
+        <div class="kpi destaque" style="--ca:var(--red)"><div class="kpi-lbl">De Estabelecimentos Não Abordados</div><div class="kpi-val" id="k-nao-abordados">—</div><div class="kpi-sub" id="k-nao-abordados-pct">—</div></div>
+        <div class="kpi destaque" style="--ca:var(--green)"><div class="kpi-lbl">De Estabelecimentos Abordados</div><div class="kpi-val" id="k-abordados">—</div><div class="kpi-sub" id="k-abordados-pct">—</div></div>
+      </div>
+
+      <div class="subsec-label" id="label-detalhe-abordados" style="margin-top:4px;">Detalhamento dos vínculos de Estabelecimentos Abordados</div>
+      <div class="kpi-grid-linha2" id="kpi-situacoes-vinc">
+        <!-- 7 cards de situação inseridos dinamicamente -->
+      </div>
+    </div>
+
+    <div class="ccard">
+      <div class="ctitle"><span style="background:var(--blue)"></span> Vínculos: Abordados × Não Abordados</div>
+      <div class="cwrap abord-chart"><canvas id="c-abordagem"></canvas></div>
+    </div>
   </div>
 
-  <!-- ── Indicadores de Indivíduos ── -->
-  <div class="subsec-label">Indicadores de Indivíduos</div>
-  <div class="kpi-grid-linha1">
+  <!-- ── Indicadores de CPF distintos por Estabelecimento ── -->
+  <div class="subsec-label">Indicadores de CPF Distintos por Estabelecimento</div>
+  <div class="kpi-grid-linha2" style="margin-bottom:28px;">
     <div class="kpi destaque" style="--ca:var(--purple)"><div class="kpi-lbl">Profissionais Únicos</div><div class="kpi-val" id="k-prof">—</div><div class="kpi-sub" id="k-prof-sub">por CPF completo</div></div>
-    <div class="kpi destaque" style="--ca:var(--yellow)"><div class="kpi-lbl">Média de Carga Horária</div><div class="kpi-val" id="k-ch">—</div><div class="kpi-sub">horas semanais</div></div>
-  </div>
-  <div class="kpi-grid-linha2">
     <div class="kpi" style="--ca:var(--green)"><div class="kpi-lbl">Admissões</div><div class="kpi-val" id="k-admissoes">—</div><div class="kpi-sub" id="k-admissoes-sub">novos no CNES</div><button class="kpi-detail-btn" onclick="openIndividuoModal('admissoes')"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 10L10 2M5 2h5v5"/></svg>Ver</button></div>
     <div class="kpi" style="--ca:var(--red)"><div class="kpi-lbl">Desligamentos</div><div class="kpi-val" id="k-desligamentos">—</div><div class="kpi-sub" id="k-desligamentos-sub">todos vínculos excluídos</div><button class="kpi-detail-btn" onclick="openIndividuoModal('desligamentos')"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 10L10 2M5 2h5v5"/></svg>Ver</button></div>
     <div class="kpi" style="--ca:var(--orange)"><div class="kpi-lbl">Alterações de Vínculos</div><div class="kpi-val" id="k-alt-ind">—</div><div class="kpi-sub" id="k-alt-ind-sub">indivíduos com vínculo alterado</div><button class="kpi-detail-btn" onclick="openIndividuoModal('alteracoes')"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 10L10 2M5 2h5v5"/></svg>Ver</button></div>
+    <div class="kpi destaque" style="--ca:var(--yellow)"><div class="kpi-lbl">Média de Carga Horária</div><div class="kpi-val" id="k-ch">—</div><div class="kpi-sub">horas semanais</div></div>
+    <div class="kpi" style="--ca:var(--green)"><div class="kpi-lbl">Alterados pelo Projeto</div><div class="kpi-val" id="k-alterados-projeto">—</div><div class="kpi-sub" id="k-alterados-projeto-sub"></div></div>
+    <div class="kpi" style="--ca:var(--yellow)"><div class="kpi-lbl">Não Alterados</div><div class="kpi-val" id="k-nao-alterados">—</div><div class="kpi-sub" id="k-nao-alterados-sub"></div></div>
   </div>
 
 
@@ -753,11 +767,12 @@ async function loadDataFromAPI() {
     showLoading('Buscando dados agregados...');
     
     // Carregar dados em paralelo
-    const [statsRes, agregadosRes, filtrosRes, naoAlteradosRes, filtrosDFRes, filtrosEstabRes] = await Promise.all([
+    const [statsRes, agregadosRes, filtrosRes, naoAlteradosRes, abordagemRes, filtrosDFRes, filtrosEstabRes] = await Promise.all([
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_STATS),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_AGREGADOS),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_FILTROS),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_NAO_ALTERADOS),
+      apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_ABORDAGEM),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_FILTROS_DF),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_FILTROS)
     ]);
@@ -791,6 +806,7 @@ async function loadDataFromAPI() {
       ch_faixa: {}, // TRANSFORMAR em objeto (nome correto)
       expectativa: {}, // TRANSFORMAR em objeto
       naoAlterados: naoAlteradosRes.success ? naoAlteradosRes.data : null,
+      abordagem: abordagemRes.success ? abordagemRes.data : null,
       table: [] // Será carregado via paginação
     };
     
@@ -1276,7 +1292,12 @@ function initializePainel() {
   if (D.naoAlterados) {
     renderNaoAlterados();
   }
-  
+
+  // Renderizar seção de abordagem (vínculos abordados x não abordados)
+  if (D.abordagem) {
+    renderAbordagemVinculos();
+  }
+
   console.log('✅ Painel inicializado');
 }
 
@@ -1337,10 +1358,11 @@ async function reloadWithFilters() {
     console.log('📡 Carregando dados filtrados...');
     
     // Recarregar dados agregados, stats e não-alterados
-    const [statsRes, agregadosRes, naoAlteradosRes] = await Promise.all([
+    const [statsRes, agregadosRes, naoAlteradosRes, abordagemRes] = await Promise.all([
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_STATS + urlSuffix),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_AGREGADOS + urlSuffix),
-      apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_NAO_ALTERADOS + urlSuffix)
+      apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_NAO_ALTERADOS + urlSuffix),
+      apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_ABORDAGEM + urlSuffix)
     ]);
 
     if (!statsRes.success) {
@@ -1396,11 +1418,17 @@ async function reloadWithFilters() {
       D.naoAlterados = naoAlteradosRes.data;
     }
 
+    // Atualizar dados de abordagem
+    if (abordagemRes && abordagemRes.success) {
+      D.abordagem = abordagemRes.data;
+    }
+
     // Atualizar UI
     console.log('🎨 Atualizando KPIs e gráficos...');
     updateKPIs();
     renderCharts();
     if (D.naoAlterados) renderNaoAlterados();
+    if (D.abordagem) renderAbordagemVinculos();
 
     hideLoading();
 
@@ -1448,25 +1476,23 @@ function resetFilters(){
 // ==========================================
 function updateKPIs(){
   if (!D || !D.stats) return;
-  
+
   const stats = D.stats;
-  const total = stats.total_vinculos;
   const fmt = n => (n || 0).toLocaleString('pt-BR');
-  const pct = (n)=> total? ((n/total)*100).toFixed(1)+'%' : '—';
-  
-  set('k-total', fmt(total));
-  set('k-espelho', D.naoAlterados ? fmt(D.naoAlterados.total_espelho) : '—');
+
   set('k-prof', fmt(stats.total_profissionais));
   set('k-ch', (stats.media_carga_horaria || 0)+'h');
-  
-  set('k-inc', fmt(stats.inclusoes));
-  set('k-inc-pct', pct(stats.inclusoes)+' do total');
 
-  set('k-alt', fmt(stats.alteracoes));
-  set('k-alt-pct', pct(stats.alteracoes)+' do total');
-
-  set('k-exc', fmt(stats.exclusoes));
-  set('k-exc-pct', pct(stats.exclusoes)+' do total');
+  // Alterados pelo Projeto / Não Alterados (mesma regra da seção "Vínculos Não Alterados pelo Projeto")
+  if (D.naoAlterados) {
+    const na = D.naoAlterados;
+    const cobertura = na.total_espelho > 0 ? ((na.alterados / na.total_espelho) * 100).toFixed(1) : '0.0';
+    const pctNaoAlt  = (100 - parseFloat(cobertura)).toFixed(1);
+    set('k-alterados-projeto', fmt(na.alterados));
+    set('k-alterados-projeto-sub', `${cobertura}% do total`);
+    set('k-nao-alterados', fmt(na.nao_alterados));
+    set('k-nao-alterados-sub', `${pctNaoAlt}% do total`);
+  }
 
   // Indicadores de Indivíduos
   const totalProf = stats.total_profissionais || 1;
@@ -1817,6 +1843,103 @@ function renderCharts(){
         plugins:{legend:{position:'right',labels:{color:'#7a9ab8',font:{size:11},padding:10}}}}
     });
   }
+}
+
+// ==========================================
+// RENDERIZAR SEÇÃO ABORDAGEM (Vínculos Abordados x Não Abordados)
+// ==========================================
+function renderAbordagemVinculos() {
+  if (!D || !D.abordagem) return;
+
+  const a = D.abordagem;
+  const fmt = n => (n || 0).toLocaleString('pt-BR');
+  const totalBase = a.total_abril_base || 0;
+  const pctTotal = n => totalBase > 0 ? ((n / totalBase) * 100).toFixed(1) + '% do total' : '—';
+
+  set('k-total', fmt(totalBase));
+  set('k-total-sub', `Situação em ${a.label || '—'}`);
+  set('k-nao-abordados', fmt(a.nao_abordados));
+  set('k-nao-abordados-pct', pctTotal(a.nao_abordados));
+  set('k-abordados', fmt(a.abordados));
+  set('k-abordados-pct', pctTotal(a.abordados));
+
+  // Label dinâmico do detalhamento (mês/ano atual)
+  const labelEl = document.getElementById('label-detalhe-abordados');
+  if (labelEl) {
+    const now = new Date();
+    const mes = now.toLocaleDateString('pt-BR', { month: 'long' });
+    labelEl.textContent = `Detalhamento dos vínculos de Estabelecimentos Abordados até ${mes.charAt(0).toUpperCase() + mes.slice(1)} / ${now.getFullYear()}`;
+  }
+
+  // Cards de situação (ordem canônica; situações sem registro aparecem zeradas)
+  const ORDEM = ['Concluído','Devolvido para Correção','Enviado para Validação','Em Andamento','Participação Recusada','Contato sem Sucesso','Estabelecimento Inativo'];
+  const CORES = {
+    'Concluído':'#3fb950', 'Em Andamento':'#ff8c42', 'Enviado para Validação':'#f85149',
+    'Devolvido para Correção':'#9b59b6', 'Participação Recusada':'#d29922',
+    'Contato sem Sucesso':'#7a9ab8', 'Estabelecimento Inativo':'#4a90e2'
+  };
+  const porSituacao = {};
+  (a.detalhamento || []).forEach(d => { porSituacao[d.situacao] = d.quantidade; });
+
+  const totalAbordados = a.abordados || 0;
+  const pctAbordados = n => totalAbordados > 0 ? ((n / totalAbordados) * 100).toFixed(1) + '% do total' : '—';
+
+  const container = document.getElementById('kpi-situacoes-vinc');
+  if (container) {
+    container.innerHTML = ORDEM.map(sit => {
+      const qtd = porSituacao[sit] || 0;
+      const cor = CORES[sit] || '#4a90e2';
+      return `
+        <div class="kpi" style="--ca:${cor}">
+          <div class="kpi-lbl">${sit}</div>
+          <div class="kpi-val">${fmt(qtd)}</div>
+          <div class="kpi-sub">${pctAbordados(qtd)}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  renderAbordagemChart();
+}
+
+function renderAbordagemChart() {
+  if (!D || !D.abordagem) return;
+
+  destroyChart('abordagem');
+  const ctx = document.getElementById('c-abordagem');
+  if (!ctx) return;
+
+  const a = D.abordagem;
+  const total = (a.abordados || 0) + (a.nao_abordados || 0);
+
+  CH['abordagem'] = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Abordados', 'Não Abordados'],
+      datasets: [{
+        data: [a.abordados, a.nao_abordados],
+        backgroundColor: ['#4a90e2', '#f85149'],
+        borderColor: '#0c1a2e',
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '62%',
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#7a9ab8', font: { size: 11 }, padding: 14 } },
+        tooltip: {
+          callbacks: {
+            label: c => {
+              const pct = total > 0 ? ((c.parsed / total) * 100).toFixed(1) : '0';
+              return ` ${c.label}: ${c.parsed.toLocaleString('pt-BR')} (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
 }
 
 // ==========================================

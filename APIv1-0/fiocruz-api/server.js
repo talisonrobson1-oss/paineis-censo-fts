@@ -1757,6 +1757,196 @@ app.get('/api/vinculos/nao-alterados', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/vinculos/abordagem
+ * Vínculos de estabelecimentos Abordados x Não Abordados, e detalhamento por
+ * situação do recenseamento.
+ *
+ * - "Não Abordados" (situação = 'Não Iniciado')  → contados no espelho CNES
+ *   da competência mais antiga disponível (baseline pré-censo, ex.: 202504).
+ * - "Abordados" (situação != 'Não Iniciado')     → contados em recenseados_nova.
+ * - Detalhamento por situação (7 situações): Concluído, Devolvido para
+ *   Correção, Enviado para Validação e Em Andamento vêm de recenseados_nova;
+ *   Participação Recusada, Contato sem Sucesso e Estabelecimento Inativo vêm
+ *   do mesmo espelho baseline (esses estabelecimentos não têm vínculos
+ *   recenseados confiáveis).
+ *
+ * Suporta os mesmos filtros de /api/vinculos/nao-alterados.
+ */
+app.get('/api/vinculos/abordagem', async (req, res) => {
+  try {
+    const allParams = [];
+    let paramCount  = 1;
+
+    // ── Condições para espelho_cnes_nova (localização + CBO + vínculo + estabelecimento) ──
+    const espelhoConditions = [];
+
+    const addEspelhoSubq = (col, val) => {
+      const vals = normalizeArr(val);
+      if (!vals.length) return;
+      if (vals.length === 1) {
+        espelhoConditions.push(`e.co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE ${col} = $${paramCount++})`);
+        allParams.push(vals[0]);
+      } else {
+        espelhoConditions.push(`e.co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE ${col} = ANY($${paramCount++}))`);
+        allParams.push(vals);
+      }
+    };
+
+    addEspelhoSubq('sg_uf',             req.query.uf);
+    addEspelhoSubq('no_macrorregional',  req.query.macro);
+    addEspelhoSubq('no_regional_saude',  req.query.regional);
+    addEspelhoSubq('no_municipio',       req.query.municipio);
+
+    const regioesDF = normalizeArr(req.query.regiao_saude_df);
+    if (regioesDF.length > 0) {
+      const allCnes = [];
+      regioesDF.forEach(r => allCnes.push(...(dfRegionSaudeMap[r] || []).map(String)));
+      const uniqueCnes = [...new Set(allCnes)];
+      if (uniqueCnes.length > 0) {
+        espelhoConditions.push(`e.co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE co_cnes::text = ANY($${paramCount++}))`);
+        allParams.push(uniqueCnes);
+      }
+    }
+    const regioesAdmDF = normalizeArr(req.query.regiao_adm_df);
+    if (regioesAdmDF.length > 0) {
+      const allCnes = [];
+      regioesAdmDF.forEach(r => allCnes.push(...(dfRegionAdmMap[r] || []).map(String)));
+      const uniqueCnes = [...new Set(allCnes)];
+      if (uniqueCnes.length > 0) {
+        espelhoConditions.push(`e.co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE co_cnes::text = ANY($${paramCount++}))`);
+        allParams.push(uniqueCnes);
+      }
+    }
+
+    const cboValsE = normalizeArr(req.query.cbo);
+    if (cboValsE.length > 0) {
+      if (cboValsE.length === 1) {
+        espelhoConditions.push(`e.co_cbo::text = $${paramCount++}`);
+        allParams.push(cboValsE[0]);
+      } else {
+        espelhoConditions.push(`e.co_cbo::text = ANY($${paramCount++})`);
+        allParams.push(cboValsE);
+      }
+    }
+
+    const vinculoValsE = normalizeArr(req.query.vinculo);
+    if (vinculoValsE.length > 0) {
+      if (vinculoValsE.length === 1) {
+        espelhoConditions.push(`e.ind_vinculacao::text = $${paramCount++}`);
+        allParams.push(vinculoValsE[0]);
+      } else {
+        espelhoConditions.push(`e.ind_vinculacao::text = ANY($${paramCount++})`);
+        allParams.push(vinculoValsE);
+      }
+    }
+
+    const estabValsE = normalizeArr(req.query.estabelecimento);
+    if (estabValsE.length > 0) {
+      if (estabValsE.length === 1) {
+        espelhoConditions.push(`e.co_cnes = $${paramCount++}`);
+        allParams.push(estabValsE[0]);
+      } else {
+        espelhoConditions.push(`e.co_cnes = ANY($${paramCount++})`);
+        allParams.push(estabValsE);
+      }
+    }
+
+    const espelhoWhereExtra = espelhoConditions.length > 0
+      ? '\n        AND ' + espelhoConditions.join('\n        AND ')
+      : '';
+
+    // ── WHERE para recenseados_nova (todos os filtros do painel) ──
+    const { whereClause: recWhere, params: recParams } = buildVinculosWhere(req.query, [], paramCount);
+    const finalParams = [...allParams, ...recParams];
+
+    const situacoesRecenseados = ['Concluído', 'Devolvido para Correção', 'Enviado para Validação', 'Em Andamento'];
+    const situacoesEspelho     = ['Participação Recusada', 'Contato sem Sucesso', 'Estabelecimento Inativo'];
+
+    const totaisSql = `
+      WITH
+      min_comp_cte AS (
+        SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova
+      ),
+      espelho_base AS (
+        SELECT e.co_cnes
+        FROM censo.espelho_cnes_nova e
+        WHERE e.nu_comp = (SELECT nu_comp FROM min_comp_cte)${espelhoWhereExtra}
+      ),
+      rec_base AS (
+        SELECT co_cnes FROM censo.recenseados_nova ${recWhere}
+      )
+      SELECT
+        (SELECT nu_comp FROM min_comp_cte)  AS nu_comp,
+        (SELECT COUNT(*) FROM espelho_base) AS total_abril_base,
+        (SELECT COUNT(*) FROM espelho_base
+           WHERE co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE situacao_recenseamento = 'Não Iniciado')
+        ) AS nao_abordados,
+        (SELECT COUNT(*) FROM rec_base
+           WHERE co_cnes IN (SELECT co_cnes FROM censo.recenseamento_nova WHERE situacao_recenseamento != 'Não Iniciado')
+        ) AS abordados
+    `;
+
+    const detalhamentoSql = `
+      WITH
+      min_comp_cte AS (
+        SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova
+      ),
+      espelho_base AS (
+        SELECT e.co_cnes
+        FROM censo.espelho_cnes_nova e
+        WHERE e.nu_comp = (SELECT nu_comp FROM min_comp_cte)${espelhoWhereExtra}
+      ),
+      rec_base AS (
+        SELECT co_cnes FROM censo.recenseados_nova ${recWhere}
+      ),
+      sit_rec AS (
+        SELECT rn.situacao_recenseamento AS situacao, COUNT(*) AS quantidade, 'recenseados' AS fonte
+        FROM rec_base r
+        JOIN censo.recenseamento_nova rn ON rn.co_cnes = r.co_cnes
+        WHERE rn.situacao_recenseamento = ANY($${finalParams.length + 1})
+        GROUP BY rn.situacao_recenseamento
+      ),
+      sit_esp AS (
+        SELECT rn.situacao_recenseamento AS situacao, COUNT(*) AS quantidade, 'espelho' AS fonte
+        FROM espelho_base eb
+        JOIN censo.recenseamento_nova rn ON rn.co_cnes = eb.co_cnes
+        WHERE rn.situacao_recenseamento = ANY($${finalParams.length + 2})
+        GROUP BY rn.situacao_recenseamento
+      )
+      SELECT * FROM sit_rec
+      UNION ALL
+      SELECT * FROM sit_esp
+    `;
+
+    const [{ rows: totaisRows }, { rows: detalheRows }] = await Promise.all([
+      pool.query(totaisSql, finalParams),
+      pool.query(detalhamentoSql, [...finalParams, situacoesRecenseados, situacoesEspelho])
+    ]);
+
+    const t = totaisRows[0];
+    const compStr   = String(t.nu_comp);
+    const mesesNome = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    const labelComp = `${mesesNome[parseInt(compStr.slice(4,6)) - 1]}/${compStr.slice(0,4)}`;
+
+    res.json({
+      competencia: compStr,
+      label: labelComp,
+      total_abril_base: parseInt(t.total_abril_base) || 0,
+      nao_abordados: parseInt(t.nao_abordados) || 0,
+      abordados: parseInt(t.abordados) || 0,
+      detalhamento: detalheRows.map(r => ({
+        situacao: r.situacao,
+        quantidade: parseInt(r.quantidade) || 0,
+        fonte: r.fonte
+      }))
+    });
+  } catch (err) {
+    console.error('Erro em /api/vinculos/abordagem:', err);
+    res.status(500).json({ error: 'Erro ao buscar vínculos por abordagem', details: err.message });
+  }
+});
+
 // ── Detalhe: Admissões (indivíduos novos no CNES) ────────────────────────
 app.get('/api/vinculos/individuo/admissoes', async (req, res) => {
   try {
