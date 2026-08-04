@@ -193,7 +193,6 @@ main{padding:24px 32px;max-width:1600px;margin:0 auto;}
 
 /* CHARTS */
 .cgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px;}
-.cgrid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:28px;}
 .ccard{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;}
 .ccard.wide{grid-column:span 2;}
 .ctitle{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:16px;display:flex;align-items:center;gap:6px;justify-content:space-between;flex-wrap:wrap;}
@@ -249,7 +248,7 @@ tbody td{padding:9px 14px;color:var(--text);white-space:nowrap;max-width:180px;o
 footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-top:1px solid var(--border);}
 
 @media(max-width:900px){
-  .cgrid,.cgrid3,.cgrid2{grid-template-columns:1fr;}
+  .cgrid,.cgrid2{grid-template-columns:1fr;}
   .ccard.wide{grid-column:span 1;}
   main{padding:16px;}
 }
@@ -535,122 +534,11 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
     </div>
   </div>
 
-  <!-- Perfil profissional -->
-  <div class="sec-label">Perfil dos Profissionais</div>
-  <div class="cgrid3">
-    <div class="ccard">
-      <div class="ctitle"><span style="background:var(--purple)"></span> Sexo</div>
-      <div class="cwrap"><canvas id="c-sexo"></canvas></div>
-    </div>
-    <div class="ccard">
-      <div class="ctitle">
-        <span style="background:var(--yellow)"></span> Raça / Cor
-        <label class="filter-toggle">
-          <input type="checkbox" id="show-invalido-raca" checked onchange="renderCharts()">
-          <span>Mostrar inválidos</span>
-        </label>
-      </div>
-      <div class="cwrap"><canvas id="c-raca"></canvas></div>
-    </div>
-    <div class="ccard">
-      <div class="ctitle">
-        <span style="background:var(--orange)"></span> Identidade de Gênero
-        <label class="filter-toggle">
-          <input type="checkbox" id="show-invalido-ident" checked onchange="renderCharts()">
-          <span>Mostrar inválidos</span>
-        </label>
-      </div>
-      <div class="cwrap"><canvas id="c-ident"></canvas></div>
-    </div>
-  </div>
-
-  <!-- Escolaridade e formação -->
-  <div class="sec-label">Escolaridade &amp; Formação</div>
-  <div class="cgrid">
-    <div class="ccard">
-      <div class="ctitle">
-        <span style="background:var(--blue)"></span> Escolaridade
-        <label class="filter-toggle">
-          <input type="checkbox" id="show-invalido-esc" checked onchange="renderCharts()">
-          <span>Mostrar inválidos</span>
-        </label>
-      </div>
-      <div class="cwrap tall"><canvas id="c-esc"></canvas></div>
-    </div>
-    <div class="ccard">
-      <div class="ctitle">
-        <span style="background:var(--green)"></span> Área de Formação (CINE) — Top 15
-        <label class="filter-toggle">
-          <input type="checkbox" id="show-invalido-cine" checked onchange="renderCharts()">
-          <span>Mostrar inválidos</span>
-        </label>
-      </div>
-      <div class="cwrap tall"><canvas id="c-cine"></canvas></div>
-    </div>
-  </div>
-
   <!-- Carga Horária -->
-  <div class="sec-label">Carga Horária &amp; Expectativa</div>
-  <div class="cgrid">
-    <div class="ccard">
-      <div class="ctitle"><span style="background:var(--blue)"></span> Distribuição de Carga Horária Semanal</div>
-      <div class="cwrap"><canvas id="c-ch"></canvas></div>
-    </div>
-    <div class="ccard">
-      <div class="ctitle">
-        <span style="background:var(--green)"></span> Expectativa Profissional
-        <label class="filter-toggle">
-          <input type="checkbox" id="show-invalido-exp" checked onchange="renderCharts()">
-          <span>Mostrar inválidos</span>
-        </label>
-      </div>
-      <div class="cwrap"><canvas id="c-exp"></canvas></div>
-    </div>
-  </div>
-
-
-  <!-- NÃO ALTERADOS -->
-  <div class="sec-label">Vínculos Não Alterados pelo Projeto</div>
-  <div class="na-section">
-    <div style="font-size:12px;color:var(--muted);margin-bottom:16px;">
-      Comparação com a competência <strong style="color:var(--text)" id="na-comp-label">—</strong> do espelho CNES. Vínculos que não foram alterados pelo projeto de recenseamento.
-    </div>
-    
-    <!-- Linha 1: 2 KPIs em destaque -->
-    <div class="na-kpi-row" style="grid-template-columns:repeat(2,1fr);margin-bottom:16px;">
-      <div class="kpi" style="--ca:var(--blue);padding:24px;">
-        <div class="kpi-lbl" style="font-size:14px;font-weight:600;">Total no Espelho</div>
-        <div class="kpi-val" id="na-total" style="font-size:38px;margin:8px 0;">—</div>
-        <div class="kpi-sub">vínculos registrados no CNES</div>
-      </div>
-      <div class="kpi" style="--ca:var(--blue);padding:24px;">
-        <div class="kpi-lbl" style="font-size:14px;font-weight:600;">Total de Vínculos Recenseados</div>
-        <div class="kpi-val" id="na-recenseados" style="font-size:38px;margin:8px 0;">—</div>
-        <div class="kpi-sub">em recenseados_nova</div>
-      </div>
-    </div>
-
-    <!-- Linha 2: 2 KPIs secundários -->
-    <div class="na-kpi-row" style="grid-template-columns:repeat(2,1fr);margin-bottom:16px;">
-      <div class="kpi" style="--ca:var(--green)">
-        <div class="kpi-lbl">Alterados pelo Projeto</div>
-        <div class="kpi-val" id="na-alterados">—</div>
-        <div class="kpi-sub" id="na-alterados-sub"></div>
-      </div>
-      <div class="kpi" style="--ca:var(--yellow)">
-        <div class="kpi-lbl">Não Alterados</div>
-        <div class="kpi-val" id="na-naoalt">—</div>
-        <div class="kpi-sub" id="na-naoalt-sub"></div>
-      </div>
-    </div>
-    
-    <!-- Gráfico de Barras -->
-    <div class="na-chart-row" style="grid-template-columns:1fr;">
-      <div class="ccard">
-        <div class="ctitle"><span style="background:var(--blue)"></span> Comparativo: Total × Alterados × Não Alterados</div>
-        <div class="cwrap"><canvas id="c-na-bars"></canvas></div>
-      </div>
-    </div>
+  <div class="sec-label">Carga Horária</div>
+  <div class="ccard" style="margin-bottom:28px;">
+    <div class="ctitle"><span style="background:var(--blue)"></span> Distribuição de Carga Horária Semanal</div>
+    <div class="cwrap"><canvas id="c-ch"></canvas></div>
   </div>
 
   <!-- Table -->
@@ -796,15 +684,9 @@ async function loadDataFromAPI() {
       op: {},
       op_cnes: data.operacaoCnes || [],
       estrategia: data.estrategia || [],
-      sexo: {},
-      raca: {},
-      identidade_genero: {},
-      escolaridade: {},
-      cine: {},
       cbo: {}, // TRANSFORMAR em objeto
       vinculacao: {}, // TRANSFORMAR em objeto
       ch_faixa: {}, // TRANSFORMAR em objeto (nome correto)
-      expectativa: {}, // TRANSFORMAR em objeto
       naoAlterados: naoAlteradosRes.success ? naoAlteradosRes.data : null,
       abordagem: abordagemRes.success ? abordagemRes.data : null,
       table: [] // Será carregado via paginação
@@ -813,31 +695,6 @@ async function loadDataFromAPI() {
     // Transformar operacao
     if (data.operacao) {
       data.operacao.forEach(r => { D.op[r.tipo] = parseInt(r.n); });
-    }
-    
-    // Transformar sexo
-    if (data.sexo) {
-      data.sexo.forEach(r => { D.sexo[r.sexo] = parseInt(r.n); });
-    }
-    
-    // Transformar raça
-    if (data.raca) {
-      data.raca.forEach(r => { D.raca[r.raca] = parseInt(r.n); });
-    }
-    
-    // Transformar identidade de gênero
-    if (data.identidadeGenero) {
-      data.identidadeGenero.forEach(r => { D.identidade_genero[r.identidade] = parseInt(r.n); });
-    }
-    
-    // Transformar escolaridade
-    if (data.escolaridade) {
-      data.escolaridade.forEach(r => { D.escolaridade[r.escolaridade] = parseInt(r.n); });
-    }
-    
-    // Transformar CINE
-    if (data.cine) {
-      data.cine.forEach(r => { D.cine[r.cine] = parseInt(r.n); });
     }
     
     // Transformar CBO (array → objeto)
@@ -855,19 +712,11 @@ async function loadDataFromAPI() {
       data.cargaHoraria.forEach(r => { D.ch_faixa[r.faixa] = parseInt(r.n); });
     }
     
-    // Transformar Expectativa (array → objeto)
-    if (data.expectativa) {
-      data.expectativa.forEach(r => { D.expectativa[r.expectativa] = parseInt(r.n); });
-    }
-    
     console.log('✅ Dados transformados:', {
       op: Object.keys(D.op).length + ' tipos',
-      sexo: Object.keys(D.sexo).length + ' categorias',
-      raca: Object.keys(D.raca).length + ' categorias',
       cbo: Object.keys(D.cbo).length + ' ocupações',
       vinculacao: Object.keys(D.vinculacao).length + ' tipos',
-      ch_faixa: Object.keys(D.ch_faixa).length + ' faixas',
-      expectativa: Object.keys(D.expectativa).length + ' opções'
+      ch_faixa: Object.keys(D.ch_faixa).length + ' faixas'
     });
     
     // Guardar referências para reuso no cascade de UF
@@ -1287,11 +1136,6 @@ function initializePainel() {
   
   // Atualizar KPIs
   updateKPIs();
-  
-  // Renderizar seção de não alterados
-  if (D.naoAlterados) {
-    renderNaoAlterados();
-  }
 
   // Renderizar seção de abordagem (vínculos abordados x não abordados)
   if (D.abordagem) {
@@ -1389,16 +1233,6 @@ async function reloadWithFilters() {
       data.operacao.forEach(r => { D.op[r.tipo] = parseInt(r.n); });
       D.op_cnes = data.operacaoCnes;
       D.estrategia = data.estrategia || [];
-      D.sexo = {};
-      data.sexo.forEach(r => { D.sexo[r.sexo] = parseInt(r.n); });
-      D.raca = {};
-      data.raca.forEach(r => { D.raca[r.raca] = parseInt(r.n); });
-      D.identidade_genero = {};
-      data.identidadeGenero.forEach(r => { D.identidade_genero[r.identidade] = parseInt(r.n); });
-      D.escolaridade = {};
-      data.escolaridade.forEach(r => { D.escolaridade[r.escolaridade] = parseInt(r.n); });
-      D.cine = {};
-      data.cine.forEach(r => { D.cine[r.cine] = parseInt(r.n); });
       // Transformar CBO (array → objeto)
       D.cbo = {};
       data.cbo.forEach(r => { D.cbo[r.cbo] = parseInt(r.n); });
@@ -1408,9 +1242,6 @@ async function reloadWithFilters() {
       // Transformar Carga Horária (array → objeto)
       D.ch_faixa = {};
       data.cargaHoraria.forEach(r => { D.ch_faixa[r.faixa] = parseInt(r.n); });
-      // Transformar Expectativa (array → objeto)
-      D.expectativa = {};
-      data.expectativa.forEach(r => { D.expectativa[r.expectativa] = parseInt(r.n); });
     }
     
     // Atualizar dados de não-alterados
@@ -1427,7 +1258,6 @@ async function reloadWithFilters() {
     console.log('🎨 Atualizando KPIs e gráficos...');
     updateKPIs();
     renderCharts();
-    if (D.naoAlterados) renderNaoAlterados();
     if (D.abordagem) renderAbordagemVinculos();
 
     hideLoading();
@@ -1518,15 +1348,6 @@ function set(id,v){
 // ==========================================
 function destroyChart(id){ if(CH[id]){CH[id].destroy();CH[id]=null;} }
 
-const DEF_OPTS = () => ({
-  responsive:true, maintainAspectRatio:false,
-  scales:{
-    x:{ticks:{color:'#7a9ab8',font:{size:10}},grid:{color:'#2a4270'}},
-    y:{ticks:{color:'#7a9ab8',font:{size:10}},grid:{color:'#2a4270'}}
-  },
-  plugins:{legend:{display:false}}
-});
-
 function renderCharts(){
   if (!D) return;
   
@@ -1616,152 +1437,6 @@ function renderCharts(){
     });
   }
 
-  // Sexo (barras verticais - dados já vêm unificados da API)
-  {
-    const labels = Object.keys(D.sexo || {});
-    const vals = Object.values(D.sexo || {});
-    const colors = ['#9b59b6', '#4a90e2', '#7a9ab8'];
-    
-    destroyChart('sexo');
-    CH['sexo'] = new Chart(document.getElementById('c-sexo'), {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          data: vals,
-          backgroundColor: colors,
-          borderRadius: 4
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false }
-        },
-        scales: {
-          y: {
-            beginAtZero: true,
-            ticks: { color: '#7a9ab8' },
-            grid: { color: '#2a4270' }
-          },
-          x: {
-            ticks: { color: '#7a9ab8' },
-            grid: { display: false }
-          }
-        }
-      }
-    });
-  }
-
-  // Raça/Cor
-  {
-    const showInvalidos = document.getElementById('show-invalido-raca')?.checked ?? true;
-    // O backend já inclui 'Sem informação' como categoria — filtrar aqui quando desmarcado
-    const SEM_INFO_KEY = 'Sem informação';
-    const finalLabels = [];
-    const finalVals   = [];
-    Object.entries(D.raca || {}).forEach(([lbl, val]) => {
-      if (!showInvalidos && lbl === SEM_INFO_KEY) return;
-      finalLabels.push(lbl);
-      finalVals.push(val);
-    });
-    const PALETTE = ['#d29922','#4a90e2','#3fb950','#f85149','#9b59b6','#ff7b72','#6e7681'];
-    const colors = finalLabels.map((l, i) => l === SEM_INFO_KEY ? '#6e7681' : PALETTE[i % (PALETTE.length - 1)]);
-    destroyChart('raca');
-    CH['raca']=new Chart(document.getElementById('c-raca'),{
-      type:'bar',
-      data:{labels:finalLabels,datasets:[{data:finalVals,backgroundColor:colors,borderRadius:4}]},
-      options:{...DEF_OPTS(),plugins:{legend:{display:false}}}
-    });
-  }
-
-  // Identidade de Gênero
-  {
-    const labels=Object.keys(D.identidade_genero||{});
-    const vals=Object.values(D.identidade_genero||{});
-    const totalIdent = vals.reduce((sum, v) => sum + v, 0);
-    const totalProfissionais = D.stats?.total_profissionais || 0;
-    const invalidos = totalProfissionais - totalIdent;
-    
-    const finalLabels = [...labels];
-    const finalVals = [...vals];
-    const showInvalidos = document.getElementById('show-invalido-ident')?.checked ?? true;
-    
-    if(invalidos > 0 && showInvalidos) {
-      finalLabels.push('Inválido/Não informado');
-      finalVals.push(invalidos);
-    }
-    
-    const colors = finalLabels.map((_, i) => i === finalLabels.length - 1 && invalidos > 0 && showInvalidos ? '#6e7681' : '#ff7b72');
-    destroyChart('ident');
-    CH['ident']=new Chart(document.getElementById('c-ident'),{
-      type:'bar',
-      data:{labels:finalLabels,datasets:[{data:finalVals,backgroundColor:colors,borderRadius:4}]},
-      options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-        scales:{x:{ticks:{color:'#7a9ab8',font:{size:10}},grid:{color:'#2a4270'}},
-                y:{ticks:{color:'#7a9ab8',font:{size:10}},grid:{color:'#2a4270'}}},
-        plugins:{legend:{display:false}}}
-    });
-  }
-
-  // Escolaridade
-  {
-    const labels=Object.keys(D.escolaridade||{});
-    const vals=Object.values(D.escolaridade||{});
-    const totalEsc = vals.reduce((sum, v) => sum + v, 0);
-    const totalProfissionais = D.stats?.total_profissionais || 0;
-    const invalidos = totalProfissionais - totalEsc;
-    
-    const allLabels = [...labels];
-    const allVals = [...vals];
-    const showInvalidos = document.getElementById('show-invalido-esc')?.checked ?? true;
-    
-    if(invalidos > 0 && showInvalidos) {
-      allLabels.push('Inválido/Não informado');
-      allVals.push(invalidos);
-    }
-    
-    const sorted=allLabels.map((l,i)=>({l,v:allVals[i]})).sort((a,b)=>b.v-a.v);
-    const colors = sorted.map(x => x.l === 'Inválido/Não informado' ? '#6e7681' : '#4a90e2');
-    
-    destroyChart('esc');
-    CH['esc']=new Chart(document.getElementById('c-esc'),{
-      type:'bar',
-      data:{labels:sorted.map(x=>x.l.length>40?x.l.slice(0,38)+'…':x.l),
-            datasets:[{data:sorted.map(x=>x.v),backgroundColor:colors,borderRadius:3}]},
-      options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-        scales:{x:{ticks:{color:'#7a9ab8',font:{size:10}},grid:{color:'#2a4270'}},
-                y:{ticks:{color:'#7a9ab8',font:{size:9}},grid:{color:'#2a4270'}}},
-        plugins:{legend:{display:false}}}
-    });
-  }
-
-  // CINE
-  {
-    const entries=Object.entries(D.cine||{}).sort((a,b)=>b[1]-a[1]);
-    const totalCine = entries.reduce((sum, e) => sum + e[1], 0);
-    const totalProfissionais = D.stats?.total_profissionais || 0;
-    const invalidos = totalProfissionais - totalCine;
-    const showInvalidos = document.getElementById('show-invalido-cine')?.checked ?? true;
-    
-    if(invalidos > 0 && showInvalidos) {
-      entries.push(['Inválido/Não informado', invalidos]);
-    }
-    
-    const colors = entries.map(x => x[0] === 'Inválido/Não informado' ? '#6e7681' : '#3fb950');
-    
-    destroyChart('cine');
-    CH['cine']=new Chart(document.getElementById('c-cine'),{
-      type:'bar',
-      data:{labels:entries.map(x=>x[0]),datasets:[{data:entries.map(x=>x[1]),backgroundColor:colors,borderRadius:3}]},
-      options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-        scales:{x:{ticks:{color:'#7a9ab8',font:{size:10}},grid:{color:'#2a4270'}},
-                y:{ticks:{color:'#7a9ab8',font:{size:10}},grid:{color:'#2a4270'}}},
-        plugins:{legend:{display:false}}}
-    });
-  }
-
   // CBO Top 20
   {
     const entries=Object.entries(D.cbo||{}).sort((a,b)=>b[1]-a[1]);
@@ -1816,33 +1491,6 @@ function renderCharts(){
     });
   }
 
-  // Expectativa
-  {
-    const labels=Object.keys(D.expectativa||{});
-    const vals=Object.values(D.expectativa||{});
-    const totalExp = vals.reduce((sum, v) => sum + v, 0);
-    const totalProfissionais = D.stats?.total_profissionais || 0;
-    const invalidos = totalProfissionais - totalExp;
-    
-    const finalLabels = [...labels];
-    const finalVals = [...vals];
-    const colors = ['#3fb950','#4a90e2','#d29922','#f85149'];
-    const showInvalidos = document.getElementById('show-invalido-exp')?.checked ?? true;
-    
-    if(invalidos > 0 && showInvalidos) {
-      finalLabels.push('Inválido/Não informado');
-      finalVals.push(invalidos);
-      colors.push('#6e7681');
-    }
-    
-    destroyChart('exp');
-    CH['exp']=new Chart(document.getElementById('c-exp'),{
-      type:'doughnut',
-      data:{labels:finalLabels,datasets:[{data:finalVals,backgroundColor:colors,borderColor:'#0c1a2e',borderWidth:2}]},
-      options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{position:'right',labels:{color:'#7a9ab8',font:{size:11},padding:10}}}}
-    });
-  }
 }
 
 // ==========================================
@@ -1949,153 +1597,6 @@ function renderAbordagemChart() {
       }
     }
   });
-}
-
-// ==========================================
-// RENDERIZAR SEÇÃO NÃO ALTERADOS
-// ==========================================
-
-function renderNaoAlterados() {
-  if (!D || !D.naoAlterados) return;
-  
-  console.log('📊 Renderizando seção Não Alterados...');
-  
-  // Atualizar KPIs
-  updateNaoAlteradosKPIs();
-  
-  // Renderizar gráfico de barras
-  renderNaoAlteradosChart();
-  
-  console.log('✅ Seção Não Alterados renderizada');
-}
-
-function updateNaoAlteradosKPIs() {
-  const data = D.naoAlterados;
-  if (!data) return;
-
-  const fmt = n => (n || 0).toLocaleString('pt-BR');
-
-  // Atualizar label dinâmico da competência
-  const labelEl = document.getElementById('na-comp-label');
-  if (labelEl && data.label) labelEl.textContent = data.label;
-
-  // Usar nao_alterados diretamente da API (comparação pelos 7 campos)
-  const naoAlterados = data.nao_alterados;
-  const alterados    = data.alterados;
-  const cobertura    = data.total_espelho > 0
-    ? ((alterados / data.total_espelho) * 100).toFixed(1)
-    : '0.0';
-  const pctNaoAlt    = (100 - parseFloat(cobertura)).toFixed(1);
-
-  // KPI Principal: Total no Espelho
-  set('na-total', fmt(data.total_espelho));
-
-  // KPI extra: Total de Vínculos Recenseados
-  set('na-recenseados', fmt(data.total_vinculos_recenseados || 0));
-
-  // KPI 2: Alterados pelo Projeto
-  set('na-alterados', fmt(alterados));
-  set('na-alterados-sub', `${cobertura}% do total`);
-
-  // KPI 3: Não Alterados
-  set('na-naoalt', fmt(naoAlterados));
-  set('na-naoalt-sub', `${pctNaoAlt}% do total`);
-
-  console.log('✅ KPIs Não Alterados atualizados');
-}
-
-function renderNaoAlteradosChart() {
-  if (!D || !D.naoAlterados) return;
-
-  const data           = D.naoAlterados;
-  const alterados      = data.alterados;
-  const naoAlterados   = data.nao_alterados;
-  const igualCnes      = (D.stats && D.stats.igual_cnes)   || 0;
-  const divergeCnes    = (D.stats && D.stats.diverge_cnes) || 0;
-
-  destroyChart('na-bars');
-  const ctx = document.getElementById('c-na-bars');
-  if (!ctx) return;
-
-  const totalRecenseados = igualCnes + divergeCnes;
-
-  CH['na-bars'] = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: ['Total no Espelho', 'Vínculos Recenseados'],
-      datasets: [
-        {
-          label: 'Alterados pelo Projeto',
-          data: [alterados, null],
-          backgroundColor: '#3fb950',
-          stack: 'espelho',
-          borderWidth: 0,
-          borderRadius: 0
-        },
-        {
-          label: 'Não Alterados',
-          data: [naoAlterados, null],
-          backgroundColor: '#d29922',
-          stack: 'espelho',
-          borderWidth: 0,
-          borderRadius: 4
-        },
-        {
-          label: 'Igual ao CNES',
-          data: [null, igualCnes],
-          backgroundColor: '#3fb950',
-          stack: 'recenseados',
-          borderWidth: 0,
-          borderRadius: 0
-        },
-        {
-          label: 'Diverge do CNES',
-          data: [null, divergeCnes],
-          backgroundColor: '#f85149',
-          stack: 'recenseados',
-          borderWidth: 0,
-          borderRadius: 4
-        }
-      ]
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          display: true,
-          position: 'bottom',
-          labels: { color: '#7a9ab8', font: { size: 12 }, padding: 16 }
-        },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => {
-              const value = (ctx.parsed.x || 0).toLocaleString('pt-BR');
-              const base  = data.total_espelho > 0 ? data.total_espelho : 1;
-              const pct   = (((ctx.parsed.x || 0) / base) * 100).toFixed(1);
-              return ` ${ctx.dataset.label}: ${value} (${pct}%)`;
-            }
-          }
-        }
-      },
-      scales: {
-        x: {
-          beginAtZero: true,
-          stacked: true,
-          ticks: { color: '#7a9ab8', callback: v => v.toLocaleString('pt-BR') },
-          grid: { color: '#2a4270' }
-        },
-        y: {
-          stacked: true,
-          ticks: { color: '#7a9ab8' },
-          grid: { display: false }
-        }
-      }
-    }
-  });
-
-  console.log('✅ Gráfico Não Alterados renderizado');
 }
 
 // ==========================================

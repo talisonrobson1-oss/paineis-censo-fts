@@ -903,12 +903,7 @@ app.get('/api/vinculos/stats', async (req, res) => {
           COALESCE(qt_carga_horaria_ambulatorial, 0) +
           COALESCE(qt_carga_horaria_hospitalar, 0) +
           COALESCE(qt_carga_horaria_outros, 0)
-        )) as media_carga_horaria,
-        SUM(CASE WHEN no_tipo_operacao_censo = 'Inclusão' THEN 1 ELSE 0 END) as inclusoes,
-        SUM(CASE WHEN no_tipo_operacao_censo = 'Alteração' THEN 1 ELSE 0 END) as alteracoes,
-        SUM(CASE WHEN no_tipo_operacao_censo = 'Exclusão' THEN 1 ELSE 0 END) as exclusoes,
-        SUM(CASE WHEN st_cnes = 'S' THEN 1 ELSE 0 END) as igual_cnes,
-        SUM(CASE WHEN st_cnes = 'N' THEN 1 ELSE 0 END) as diverge_cnes
+        )) as media_carga_horaria
       FROM censo.recenseados_nova
       ${whereClause};
     `;
@@ -965,11 +960,6 @@ app.get('/api/vinculos/stats', async (req, res) => {
       total_profissionais:   parseInt(stats.total_profissionais)   || 0,
       total_cnes:            parseInt(stats.total_cnes)            || 0,
       media_carga_horaria:   parseInt(stats.media_carga_horaria)   || 0,
-      inclusoes:             parseInt(stats.inclusoes)             || 0,
-      alteracoes:            parseInt(stats.alteracoes)            || 0,
-      exclusoes:             parseInt(stats.exclusoes)             || 0,
-      igual_cnes:            parseInt(stats.igual_cnes)            || 0,
-      diverge_cnes:          parseInt(stats.diverge_cnes)          || 0,
       admissoes:             parseInt(ind.admissoes)               || 0,
       desligamentos:         parseInt(ind.desligamentos)           || 0,
       alteracoes_individuo:  parseInt(ind.alteracoes_individuo)    || 0
@@ -994,20 +984,19 @@ app.get('/api/vinculos/agregados', async (req, res) => {
     
     console.log('📊 Executando todos os agregados em paralelo...');
     // Todas as queries em paralelo (única rodada)
-    const [operacao, operacaoCnes, sexo, raca,
-      identidadeGenero, escolaridade, cine, cbo,
-      vinculacao, cargaHoraria, expectativa, estrategia
+    const [operacao, operacaoCnes, cbo,
+      vinculacao, cargaHoraria, estrategia
     ] = await Promise.all([
       // Tipo de Operação (SEM incluir não alterados quando há filtros)
       executeQuery(`
-        SELECT 
-          no_tipo_operacao_censo as tipo, 
+        SELECT
+          no_tipo_operacao_censo as tipo,
           COUNT(*) as n
         FROM censo.recenseados_nova
         ${whereClause ? whereClause + ' AND no_tipo_operacao_censo IS NOT NULL' : 'WHERE no_tipo_operacao_censo IS NOT NULL'}
         GROUP BY no_tipo_operacao_censo
       `),
-      
+
       // Operação x CNES
       executeQuery(`
         SELECT no_tipo_operacao_censo, st_cnes, COUNT(*) as n
@@ -1015,71 +1004,7 @@ app.get('/api/vinculos/agregados', async (req, res) => {
         ${whereClause ? whereClause + ' AND no_tipo_operacao_censo IS NOT NULL' : 'WHERE no_tipo_operacao_censo IS NOT NULL'}
         GROUP BY no_tipo_operacao_censo, st_cnes
       `),
-      
-      // Sexo (unificado: M/1=Masculino, F/2=Feminino, resto=Inválido) — CPFs únicos
-      executeQuery(`
-        SELECT
-          CASE
-            WHEN co_sexo IN ('M', '1') THEN 'Masculino'
-            WHEN co_sexo IN ('F', '2') THEN 'Feminino'
-            ELSE 'Inválido/Não informado'
-          END as sexo,
-          COUNT(DISTINCT nu_cpf) as n
-        FROM censo.recenseados_nova
-        ${whereClause ? whereClause + " AND co_sexo IS NOT NULL AND co_sexo != ''" : "WHERE co_sexo IS NOT NULL AND co_sexo != ''"}
-        GROUP BY
-          CASE
-            WHEN co_sexo IN ('M', '1') THEN 'Masculino'
-            WHEN co_sexo IN ('F', '2') THEN 'Feminino'
-            ELSE 'Inválido/Não informado'
-          END
-      `),
-      
-      // Raça/Cor — CPFs únicos
-      executeQuery(`
-        SELECT
-          CASE
-            WHEN ds_raca_cor IS NULL OR ds_raca_cor = '' OR UPPER(ds_raca_cor) = 'SEM INFORMAÇÃO'
-            THEN 'Sem informação'
-            ELSE ds_raca_cor
-          END as raca,
-          COUNT(DISTINCT nu_cpf) as n
-        FROM censo.recenseados_nova
-        ${whereClause}
-        GROUP BY
-          CASE
-            WHEN ds_raca_cor IS NULL OR ds_raca_cor = '' OR UPPER(ds_raca_cor) = 'SEM INFORMAÇÃO'
-            THEN 'Sem informação'
-            ELSE ds_raca_cor
-          END
-      `),
 
-      // Identidade de Gênero — CPFs únicos
-      executeQuery(`
-        SELECT ds_identidade_genero as identidade, COUNT(DISTINCT nu_cpf) as n
-        FROM censo.recenseados_nova
-        ${whereClause ? whereClause + " AND ds_identidade_genero IS NOT NULL AND ds_identidade_genero != ''" : "WHERE ds_identidade_genero IS NOT NULL AND ds_identidade_genero != ''"}
-        GROUP BY ds_identidade_genero
-      `),
-      
-      // Escolaridade — CPFs únicos
-      executeQuery(`
-        SELECT ds_escolaridade as escolaridade, COUNT(DISTINCT nu_cpf) as n
-        FROM censo.recenseados_nova
-        ${whereClause ? whereClause + " AND ds_escolaridade IS NOT NULL AND ds_escolaridade != ''" : "WHERE ds_escolaridade IS NOT NULL AND ds_escolaridade != ''"}
-        GROUP BY ds_escolaridade
-      `),
-      
-      // Área de Formação (CINE) - Top 15 — CPFs únicos
-      executeQuery(`
-        SELECT ds_cine as cine, COUNT(DISTINCT nu_cpf) as n
-        FROM censo.recenseados_nova
-        ${whereClause ? whereClause + " AND ds_cine IS NOT NULL AND ds_cine != ''" : "WHERE ds_cine IS NOT NULL AND ds_cine != ''"}
-        GROUP BY ds_cine
-        ORDER BY n DESC
-        LIMIT 15
-      `),
-      
       // CBO - Top 20
       executeQuery(`
         SELECT ds_cbo_ocupacao as cbo, COUNT(*) as n
@@ -1150,14 +1075,6 @@ app.get('/api/vinculos/agregados', async (req, res) => {
           END
       `),
       
-      // Expectativa Profissional — CPFs únicos
-      executeQuery(`
-        SELECT no_expectativa_profissional as expectativa, COUNT(DISTINCT nu_cpf) as n
-        FROM censo.recenseados_nova
-        ${whereClause ? whereClause + " AND no_expectativa_profissional IS NOT NULL AND no_expectativa_profissional != ''" : "WHERE no_expectativa_profissional IS NOT NULL AND no_expectativa_profissional != ''"}
-        GROUP BY no_expectativa_profissional
-      `),
-
       // Estratégia — CTE filtra recenseados_nova com o whereClause sem risco de
       // alias collision; LEFT JOIN traz a estratégia do estabelecimento (DISTINCT ON)
       (() => {
@@ -1186,15 +1103,9 @@ app.get('/api/vinculos/agregados', async (req, res) => {
     res.json({
       operacao: operacao.rows,
       operacaoCnes: operacaoCnes.rows,
-      sexo: sexo.rows,
-      raca: raca.rows,
-      identidadeGenero: identidadeGenero.rows,
-      escolaridade: escolaridade.rows,
-      cine: cine.rows,
       cbo: cbo.rows,
       vinculacao: vinculacao.rows,
       cargaHoraria: cargaHoraria.rows,
-      expectativa: expectativa.rows,
       estrategia: estrategia.rows
     });
   } catch (err) {
