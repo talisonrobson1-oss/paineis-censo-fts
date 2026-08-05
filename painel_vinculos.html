@@ -692,26 +692,26 @@ async function loadDataFromAPI() {
       table: [] // Será carregado via paginação
     };
     
-    // Transformar operacao
+    // Transformar operacao (array → objeto: {n, cpfUnicos})
     if (data.operacao) {
-      data.operacao.forEach(r => { D.op[r.tipo] = parseInt(r.n); });
+      data.operacao.forEach(r => { D.op[r.tipo] = { n: parseInt(r.n), cpfUnicos: parseInt(r.cpf_unicos) }; });
     }
-    
-    // Transformar CBO (array → objeto)
+
+    // Transformar CBO (array → objeto: {n, cpfUnicos})
     if (data.cbo) {
-      data.cbo.forEach(r => { D.cbo[r.cbo] = parseInt(r.n); });
+      data.cbo.forEach(r => { D.cbo[r.cbo] = { n: parseInt(r.n), cpfUnicos: parseInt(r.cpf_unicos) }; });
     }
-    
-    // Transformar Vinculação (array → objeto)
+
+    // Transformar Vinculação (array → objeto: {n, cpfUnicos})
     if (data.vinculacao) {
-      data.vinculacao.forEach(r => { D.vinculacao[r.vinculacao] = parseInt(r.n); });
+      data.vinculacao.forEach(r => { D.vinculacao[r.vinculacao] = { n: parseInt(r.n), cpfUnicos: parseInt(r.cpf_unicos) }; });
     }
-    
-    // Transformar Carga Horária (array → objeto)
+
+    // Transformar Carga Horária (array → objeto: {n, cpfUnicos})
     if (data.cargaHoraria) {
-      data.cargaHoraria.forEach(r => { D.ch_faixa[r.faixa] = parseInt(r.n); });
+      data.cargaHoraria.forEach(r => { D.ch_faixa[r.faixa] = { n: parseInt(r.n), cpfUnicos: parseInt(r.cpf_unicos) }; });
     }
-    
+
     console.log('✅ Dados transformados:', {
       op: Object.keys(D.op).length + ' tipos',
       cbo: Object.keys(D.cbo).length + ' ocupações',
@@ -1230,18 +1230,18 @@ async function reloadWithFilters() {
     if (agregadosRes.success) {
       const data = agregadosRes.data;
       D.op = {};
-      data.operacao.forEach(r => { D.op[r.tipo] = parseInt(r.n); });
+      data.operacao.forEach(r => { D.op[r.tipo] = { n: parseInt(r.n), cpfUnicos: parseInt(r.cpf_unicos) }; });
       D.op_cnes = data.operacaoCnes;
       D.estrategia = data.estrategia || [];
-      // Transformar CBO (array → objeto)
+      // Transformar CBO (array → objeto: {n, cpfUnicos})
       D.cbo = {};
-      data.cbo.forEach(r => { D.cbo[r.cbo] = parseInt(r.n); });
-      // Transformar Vinculação (array → objeto)
+      data.cbo.forEach(r => { D.cbo[r.cbo] = { n: parseInt(r.n), cpfUnicos: parseInt(r.cpf_unicos) }; });
+      // Transformar Vinculação (array → objeto: {n, cpfUnicos})
       D.vinculacao = {};
-      data.vinculacao.forEach(r => { D.vinculacao[r.vinculacao] = parseInt(r.n); });
-      // Transformar Carga Horária (array → objeto)
+      data.vinculacao.forEach(r => { D.vinculacao[r.vinculacao] = { n: parseInt(r.n), cpfUnicos: parseInt(r.cpf_unicos) }; });
+      // Transformar Carga Horária (array → objeto: {n, cpfUnicos})
       D.ch_faixa = {};
-      data.cargaHoraria.forEach(r => { D.ch_faixa[r.faixa] = parseInt(r.n); });
+      data.cargaHoraria.forEach(r => { D.ch_faixa[r.faixa] = { n: parseInt(r.n), cpfUnicos: parseInt(r.cpf_unicos) }; });
     }
     
     // Atualizar dados de não-alterados
@@ -1351,39 +1351,37 @@ function destroyChart(id){ if(CH[id]){CH[id].destroy();CH[id]=null;} }
 function renderCharts(){
   if (!D) return;
   
-  // Tipo de Operação (barras verticais ordenadas + Não Alterados)
+  // Tipo de Operação (barras verticais ordenadas: Vínculos x CPFs Únicos)
   {
-    // Construir dados incluindo "Não Alterados" se existir
     const data = [];
     if (D.op) {
       Object.keys(D.op).forEach(tipo => {
-        data.push({ tipo, n: D.op[tipo] });
+        data.push({ tipo, n: D.op[tipo].n, cpfUnicos: D.op[tipo].cpfUnicos });
       });
     }
-    
+
     // Ordenar por quantidade decrescente
     const sorted = data.sort((a, b) => b.n - a.n);
-    
+
     const labels = sorted.map(item => item.tipo);
     const vals = sorted.map(item => item.n);
-    const colors = ['#3fb950', '#d29922', '#4a90e2', '#f85149', '#9b59b6'];
-    
+    const cpfVals = sorted.map(item => item.cpfUnicos);
+
     destroyChart('op');
     CH['op'] = new Chart(document.getElementById('c-op'), {
       type: 'bar',
       data: {
         labels,
-        datasets: [{
-          data: vals,
-          backgroundColor: colors,
-          borderRadius: 4
-        }]
+        datasets: [
+          { label: 'Vínculos', data: vals, backgroundColor: '#4a90e2', borderRadius: 4 },
+          { label: 'CPFs Únicos', data: cpfVals, backgroundColor: '#56d364', borderRadius: 4 }
+        ]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { display: false }
+          legend: { display: true, position: 'bottom', labels: { color: '#7a9ab8', font: { size: 11 }, padding: 12 } }
         },
         scales: {
           y: {
@@ -1400,28 +1398,27 @@ function renderCharts(){
     });
   }
 
-  // Estratégia (barras verticais)
+  // Estratégia (barras verticais: Vínculos x CPFs Únicos)
   if (D.estrategia && D.estrategia.length > 0) {
     const sorted = [...D.estrategia].sort((a, b) => parseInt(b.n) - parseInt(a.n));
     const labels = sorted.map(r => r.estrategia);
     const vals = sorted.map(r => parseInt(r.n));
-    const colors = ['#4a90e2','#3fb950','#d29922','#f85149','#9b59b6','#ff7b72','#79c0ff','#56d364'];
+    const cpfVals = sorted.map(r => parseInt(r.cpf_unicos));
 
     destroyChart('estrategia');
     CH['estrategia'] = new Chart(document.getElementById('c-estrategia'), {
       type: 'bar',
       data: {
         labels,
-        datasets: [{
-          data: vals,
-          backgroundColor: colors,
-          borderRadius: 4
-        }]
+        datasets: [
+          { label: 'Vínculos', data: vals, backgroundColor: '#4a90e2', borderRadius: 4 },
+          { label: 'CPFs Únicos', data: cpfVals, backgroundColor: '#56d364', borderRadius: 4 }
+        ]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        plugins: { legend: { display: true, position: 'bottom', labels: { color: '#7a9ab8', font: { size: 11 }, padding: 12 } } },
         scales: {
           y: {
             beginAtZero: true,
@@ -1437,24 +1434,27 @@ function renderCharts(){
     });
   }
 
-  // CBO Top 20
+  // CBO Top 20 (barras horizontais: Vínculos x CPFs Únicos)
   {
-    const entries=Object.entries(D.cbo||{}).sort((a,b)=>b[1]-a[1]);
+    const entries=Object.entries(D.cbo||{}).sort((a,b)=>b[1].n-a[1].n);
     destroyChart('cbo');
     CH['cbo']=new Chart(document.getElementById('c-cbo'),{
       type:'bar',
       data:{labels:entries.map(x=>x[0].length>35?x[0].slice(0,33)+'…':x[0]),
-            datasets:[{data:entries.map(x=>x[1]),backgroundColor:'#d29922',borderRadius:3}]},
+            datasets:[
+              { label: 'Vínculos', data: entries.map(x=>x[1].n), backgroundColor: '#d29922', borderRadius: 3 },
+              { label: 'CPFs Únicos', data: entries.map(x=>x[1].cpfUnicos), backgroundColor: '#56d364', borderRadius: 3 }
+            ]},
       options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
         scales:{x:{ticks:{color:'#7a9ab8',font:{size:10}},grid:{color:'#2a4270'}},
                 y:{ticks:{color:'#7a9ab8',font:{size:9}},grid:{color:'#2a4270'}}},
-        plugins:{legend:{display:false}}}
+        plugins:{legend:{display:true,position:'bottom',labels:{color:'#7a9ab8',font:{size:11},padding:10}}}}
     });
   }
 
-  // Vinculação Top 15
+  // Vinculação Top 15 (barras horizontais: Vínculos x CPFs Únicos)
   {
-    const entries=Object.entries(D.vinculacao||{}).sort((a,b)=>b[1]-a[1]);
+    const entries=Object.entries(D.vinculacao||{}).sort((a,b)=>b[1].n-a[1].n);
     const shortLabel=l=>{
       const parts=l.split(' - ');
       return parts.length>1?parts[0].slice(0,20)+' · '+parts[1].slice(0,18):l.slice(0,35);
@@ -1463,31 +1463,33 @@ function renderCharts(){
     CH['vinc']=new Chart(document.getElementById('c-vinc'),{
       type:'bar',
       data:{labels:entries.map(x=>shortLabel(x[0])),
-            datasets:[{data:entries.map(x=>x[1]),backgroundColor:'#9b59b6',borderRadius:3}]},
+            datasets:[
+              { label: 'Vínculos', data: entries.map(x=>x[1].n), backgroundColor: '#9b59b6', borderRadius: 3 },
+              { label: 'CPFs Únicos', data: entries.map(x=>x[1].cpfUnicos), backgroundColor: '#56d364', borderRadius: 3 }
+            ]},
       options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
         scales:{x:{ticks:{color:'#7a9ab8',font:{size:10}},grid:{color:'#2a4270'}},
                 y:{ticks:{color:'#7a9ab8',font:{size:9}},grid:{color:'#2a4270'}}},
-        plugins:{legend:{display:false}}}
+        plugins:{legend:{display:true,position:'bottom',labels:{color:'#7a9ab8',font:{size:11},padding:10}}}}
     });
   }
 
-  // Carga Horária
+  // Carga Horária (barras verticais: Vínculos x CPFs Únicos)
   {
     const labels=Object.keys(D.ch_faixa||{});
-    const vals=Object.values(D.ch_faixa||{});
-    const colors=labels.map(l=>{
-      if(l==='0h') return '#6e7681';
-      if(l==='Inválido (>100h ou <0)') return '#f85149';
-      return '#4a90e2';
-    });
+    const vals=labels.map(l=>D.ch_faixa[l].n);
+    const cpfVals=labels.map(l=>D.ch_faixa[l].cpfUnicos);
     destroyChart('ch');
     CH['ch']=new Chart(document.getElementById('c-ch'),{
       type:'bar',
-      data:{labels,datasets:[{data:vals,backgroundColor:colors,borderRadius:4}]},
+      data:{labels,datasets:[
+        { label: 'Vínculos', data: vals, backgroundColor: '#4a90e2', borderRadius: 4 },
+        { label: 'CPFs Únicos', data: cpfVals, backgroundColor: '#56d364', borderRadius: 4 }
+      ]},
       options:{responsive:true,maintainAspectRatio:false,
         scales:{x:{ticks:{color:'#7a9ab8',font:{size:11}},grid:{color:'#2a4270'}},
                 y:{ticks:{color:'#7a9ab8',font:{size:11}},grid:{color:'#2a4270'}}},
-        plugins:{legend:{display:false}}}
+        plugins:{legend:{display:true,position:'bottom',labels:{color:'#7a9ab8',font:{size:11},padding:12}}}}
     });
   }
 

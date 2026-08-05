@@ -991,7 +991,8 @@ app.get('/api/vinculos/agregados', async (req, res) => {
       executeQuery(`
         SELECT
           no_tipo_operacao_censo as tipo,
-          COUNT(*) as n
+          COUNT(*) as n,
+          COUNT(DISTINCT nu_cpf) as cpf_unicos
         FROM censo.recenseados_nova
         ${whereClause ? whereClause + ' AND no_tipo_operacao_censo IS NOT NULL' : 'WHERE no_tipo_operacao_censo IS NOT NULL'}
         GROUP BY no_tipo_operacao_censo
@@ -1007,7 +1008,7 @@ app.get('/api/vinculos/agregados', async (req, res) => {
 
       // CBO - Top 20
       executeQuery(`
-        SELECT ds_cbo_ocupacao as cbo, COUNT(*) as n
+        SELECT ds_cbo_ocupacao as cbo, COUNT(*) as n, COUNT(DISTINCT nu_cpf) as cpf_unicos
         FROM censo.recenseados_nova
         ${whereClause ? whereClause + " AND ds_cbo_ocupacao IS NOT NULL AND ds_cbo_ocupacao != ''" : "WHERE ds_cbo_ocupacao IS NOT NULL AND ds_cbo_ocupacao != ''"}
         GROUP BY ds_cbo_ocupacao
@@ -1017,27 +1018,29 @@ app.get('/api/vinculos/agregados', async (req, res) => {
 
       // Tipo de Vinculação - Top 15
       executeQuery(`
-        SELECT vinculacao, COUNT(*) as n
+        SELECT vinculacao, COUNT(*) as n, COUNT(DISTINCT nu_cpf) as cpf_unicos
         FROM censo.recenseados_nova
         ${whereClause ? whereClause + " AND vinculacao IS NOT NULL AND vinculacao != ''" : "WHERE vinculacao IS NOT NULL AND vinculacao != ''"}
         GROUP BY vinculacao
         ORDER BY n DESC
         LIMIT 15
       `),
-      
+
       // Carga Horária (faixas) - soma das 3 colunas
       executeQuery(`
         WITH ch_calculado AS (
-          SELECT 
-            COALESCE(qt_carga_horaria_ambulatorial, 0) + 
-            COALESCE(qt_carga_horaria_hospitalar, 0) + 
+          SELECT
+            nu_cpf,
+            COALESCE(qt_carga_horaria_ambulatorial, 0) +
+            COALESCE(qt_carga_horaria_hospitalar, 0) +
             COALESCE(qt_carga_horaria_outros, 0) as ch_total
           FROM censo.recenseados_nova
           ${whereClause}
         ),
         faixas AS (
-          SELECT 
-            CASE 
+          SELECT
+            nu_cpf,
+            CASE
               WHEN ch_total = 0 THEN '0h'
               WHEN ch_total > 0 AND ch_total <= 10 THEN '1-10h'
               WHEN ch_total > 10 AND ch_total <= 20 THEN '11-20h'
@@ -1053,12 +1056,13 @@ app.get('/api/vinculos/agregados', async (req, res) => {
             END as faixa
           FROM ch_calculado
         )
-        SELECT 
+        SELECT
           faixa,
-          COUNT(*) as n
+          COUNT(*) as n,
+          COUNT(DISTINCT nu_cpf) as cpf_unicos
         FROM faixas
         GROUP BY faixa
-        ORDER BY 
+        ORDER BY
           CASE faixa
             WHEN '0h' THEN 0
             WHEN '1-10h' THEN 1
@@ -1074,17 +1078,18 @@ app.get('/api/vinculos/agregados', async (req, res) => {
             ELSE 11
           END
       `),
-      
+
       // Estratégia — CTE filtra recenseados_nova com o whereClause sem risco de
       // alias collision; LEFT JOIN traz a estratégia do estabelecimento (DISTINCT ON)
       (() => {
         const sql = `
           WITH base AS (
-            SELECT co_cnes FROM censo.recenseados_nova
+            SELECT co_cnes, nu_cpf FROM censo.recenseados_nova
             ${whereClause || 'WHERE 1=1'}
           )
           SELECT COALESCE(NULLIF(r.estrategia, ''), 'Não informado') AS estrategia,
-                 COUNT(*) AS n
+                 COUNT(*) AS n,
+                 COUNT(DISTINCT v.nu_cpf) AS cpf_unicos
           FROM base v
           LEFT JOIN (
             SELECT DISTINCT ON (co_cnes) co_cnes, estrategia
