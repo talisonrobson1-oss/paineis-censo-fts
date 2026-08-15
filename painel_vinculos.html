@@ -179,6 +179,8 @@ main{padding:24px 32px;max-width:1600px;margin:0 auto;}
 .abord-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(300px,420px);gap:16px;margin-bottom:16px;align-items:stretch;}
 .abord-grid .ccard{display:flex;flex-direction:column;}
 .abord-chart{flex:1;min-height:360px;height:auto;}
+.tipo-info-opt{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text);cursor:pointer;user-select:none;text-transform:none;letter-spacing:normal;font-weight:500;margin-bottom:6px;}
+.tipo-info-opt input[type="checkbox"]{width:15px;height:15px;cursor:pointer;accent-color:var(--blue);}
 .abord-kpis{display:flex;flex-direction:column;}
 #kpi-situacoes-vinc{flex:1;}
 #kpi-situacoes-vinc .kpi{padding:20px 22px;}
@@ -200,6 +202,7 @@ main{padding:24px 32px;max-width:1600px;margin:0 auto;}
 
 /* CHARTS */
 .cgrid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px;}
+.cgrid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:28px;}
 .ccard{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;}
 .ccard.wide{grid-column:span 2;}
 .ctitle{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:16px;display:flex;align-items:center;gap:6px;justify-content:space-between;flex-wrap:wrap;}
@@ -255,7 +258,7 @@ tbody td{padding:9px 14px;color:var(--text);white-space:nowrap;max-width:180px;o
 footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-top:1px solid var(--border);}
 
 @media(max-width:900px){
-  .cgrid,.cgrid2{grid-template-columns:1fr;}
+  .cgrid,.cgrid2,.cgrid3{grid-template-columns:1fr;}
   .ccard.wide{grid-column:span 1;}
   main{padding:16px;}
 }
@@ -381,6 +384,17 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
 </div>
 
 <div class="fbar" id="vinc-fbar">
+  <!-- Tipo de Informação exibida nos gráficos -->
+  <div class="filter-section">
+    <div class="filter-section-title">Tipo de Informação</div>
+    <div class="filter-section-content">
+      <div class="fg">
+        <label class="tipo-info-opt"><input type="checkbox" id="f-tipo-vinculos" checked onchange="onTipoInfoChange()"> Vínculos</label>
+        <label class="tipo-info-opt"><input type="checkbox" id="f-tipo-cpf" onchange="onTipoInfoChange()"> CPFs Únicos</label>
+      </div>
+    </div>
+  </div>
+
   <!-- Localização -->
   <div class="filter-section">
     <div class="filter-section-title">Localização</div>
@@ -515,6 +529,51 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
   </div>
 
 
+  <!-- Situação do Recenseamento (espelho Abr/2025) -->
+  <div class="sec-label">Situação do Recenseamento</div>
+  <div class="cgrid3">
+    <div class="ccard">
+      <div class="ctitle"><span style="background:var(--green)"></span> Vínculos por Situação do Recenseamento</div>
+      <div class="cwrap tall"><canvas id="c-esp-situacao"></canvas></div>
+    </div>
+    <div class="ccard">
+      <div class="ctitle"><span style="background:var(--teal)"></span> Esfera Administrativa</div>
+      <div class="cwrap tall"><canvas id="c-esp-esfera"></canvas></div>
+    </div>
+    <div class="ccard">
+      <div class="ctitle"><span style="background:var(--blue)"></span> Vínculo com o SUS</div>
+      <div class="cwrap tall"><canvas id="c-esp-sus"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Distribuição Geográfica (espelho Abr/2025) -->
+  <div class="sec-label">Distribuição Geográfica</div>
+  <div class="cgrid">
+    <div class="ccard">
+      <div class="ctitle"><span style="background:var(--purple)"></span> Por UF</div>
+      <div class="cwrap"><canvas id="c-esp-uf"></canvas></div>
+    </div>
+    <div class="ccard">
+      <div class="ctitle"><span style="background:var(--orange)"></span> Por Macrorregião</div>
+      <div class="cwrap"><canvas id="c-esp-macro"></canvas></div>
+    </div>
+    <div class="ccard">
+      <div class="ctitle"><span style="background:var(--teal)"></span> Por Região de Saúde</div>
+      <div class="cwrap tall"><canvas id="c-esp-regional"></canvas></div>
+    </div>
+    <div class="ccard">
+      <div class="ctitle"><span style="background:var(--yellow)"></span> Por Município / RAs</div>
+      <div class="cwrap tall"><canvas id="c-esp-municipio"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Progresso por Regional -->
+  <div class="sec-label">Progresso por Regional de Saúde</div>
+  <div class="ccard" style="margin-bottom:28px;">
+    <div class="ctitle"><span style="background:var(--green)"></span> % Concluído por Regional</div>
+    <div class="plist" id="esp-progress-regional"></div>
+  </div>
+
   <!-- CBO e Vínculo (movido para cá) -->
   <div class="sec-label">Ocupação &amp; Tipo de Vínculo</div>
   <div class="cgrid">
@@ -570,8 +629,6 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
             <th onclick="srt(15)">Cód. Vinculação ↕</th>
             <th onclick="srt(4)">Tipo de Vínculo ↕</th>
             <th onclick="srt(2)">Sexo ↕</th>
-            <th onclick="srt(10)">Escolaridade ↕</th>
-            <th onclick="srt(12)">Formação (CINE) ↕</th>
             <th onclick="srt(5)">C.H. Total ↕</th>
             <th onclick="srt(7)">Operação ↕</th>
             <th onclick="srt(9)">Sit. CNES ↕</th>
@@ -662,12 +719,13 @@ async function loadDataFromAPI() {
     showLoading('Buscando dados agregados...');
     
     // Carregar dados em paralelo
-    const [statsRes, agregadosRes, filtrosRes, naoAlteradosRes, abordagemRes, filtrosDFRes, filtrosEstabRes] = await Promise.all([
+    const [statsRes, agregadosRes, filtrosRes, naoAlteradosRes, abordagemRes, espelhoRes, filtrosDFRes, filtrosEstabRes] = await Promise.all([
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_STATS),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_AGREGADOS),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_FILTROS),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_NAO_ALTERADOS),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_ABORDAGEM),
+      apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_AGREGADOS_ESPELHO),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_FILTROS_DF),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_FILTROS)
     ]);
@@ -696,6 +754,7 @@ async function loadDataFromAPI() {
       ch_faixa: {}, // TRANSFORMAR em objeto (nome correto)
       naoAlterados: naoAlteradosRes.success ? naoAlteradosRes.data : null,
       abordagem: abordagemRes.success ? abordagemRes.data : null,
+      espelho: espelhoRes.success ? espelhoRes.data : null,
       table: [] // Será carregado via paginação
     };
     
@@ -1149,6 +1208,11 @@ function initializePainel() {
     renderAbordagemVinculos();
   }
 
+  // Renderizar gráficos do espelho (situação, esfera, SUS, geografia)
+  if (D.espelho) {
+    renderEspelhoCharts();
+  }
+
   console.log('✅ Painel inicializado');
 }
 
@@ -1209,11 +1273,12 @@ async function reloadWithFilters() {
     console.log('📡 Carregando dados filtrados...');
     
     // Recarregar dados agregados, stats e não-alterados
-    const [statsRes, agregadosRes, naoAlteradosRes, abordagemRes] = await Promise.all([
+    const [statsRes, agregadosRes, naoAlteradosRes, abordagemRes, espelhoRes] = await Promise.all([
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_STATS + urlSuffix),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_AGREGADOS + urlSuffix),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_NAO_ALTERADOS + urlSuffix),
-      apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_ABORDAGEM + urlSuffix)
+      apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_ABORDAGEM + urlSuffix),
+      apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_AGREGADOS_ESPELHO + urlSuffix)
     ]);
 
     if (!statsRes.success) {
@@ -1261,11 +1326,17 @@ async function reloadWithFilters() {
       D.abordagem = abordagemRes.data;
     }
 
+    // Atualizar agregados do espelho (situação, esfera, SUS, geografia)
+    if (espelhoRes && espelhoRes.success) {
+      D.espelho = espelhoRes.data;
+    }
+
     // Atualizar UI
     console.log('🎨 Atualizando KPIs e gráficos...');
     updateKPIs();
     renderCharts();
     if (D.abordagem) renderAbordagemVinculos();
+    if (D.espelho) renderEspelhoCharts();
 
     hideLoading();
 
@@ -1379,16 +1450,13 @@ function renderCharts(){
       type: 'bar',
       data: {
         labels,
-        datasets: [
-          { label: 'Vínculos', data: vals, backgroundColor: '#4a90e2', borderRadius: 4 },
-          { label: 'CPFs Únicos', data: cpfVals, backgroundColor: '#56d364', borderRadius: 4 }
-        ]
+        datasets: dualDatasets(vals, cpfVals, '#4a90e2')
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { display: true, position: 'bottom', labels: { color: '#7a9ab8', font: { size: 11 }, padding: 12 } }
+          legend: dualLegend()
         },
         scales: {
           y: {
@@ -1417,15 +1485,12 @@ function renderCharts(){
       type: 'bar',
       data: {
         labels,
-        datasets: [
-          { label: 'Vínculos', data: vals, backgroundColor: '#4a90e2', borderRadius: 4 },
-          { label: 'CPFs Únicos', data: cpfVals, backgroundColor: '#56d364', borderRadius: 4 }
-        ]
+        datasets: dualDatasets(vals, cpfVals, '#4a90e2')
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { display: true, position: 'bottom', labels: { color: '#7a9ab8', font: { size: 11 }, padding: 12 } } },
+        plugins: { legend: dualLegend() },
         scales: {
           y: {
             beginAtZero: true,
@@ -1448,14 +1513,11 @@ function renderCharts(){
     CH['cbo']=new Chart(document.getElementById('c-cbo'),{
       type:'bar',
       data:{labels:entries.map(x=>x[0].length>35?x[0].slice(0,33)+'…':x[0]),
-            datasets:[
-              { label: 'Vínculos', data: entries.map(x=>x[1].n), backgroundColor: '#d29922', borderRadius: 3 },
-              { label: 'CPFs Únicos', data: entries.map(x=>x[1].cpfUnicos), backgroundColor: '#56d364', borderRadius: 3 }
-            ]},
+            datasets: dualDatasets(entries.map(x=>x[1].n), entries.map(x=>x[1].cpfUnicos), '#d29922', '#56d364', 3)},
       options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
         scales:{x:{ticks:{color:'#7a9ab8',font:{size:10}},grid:{color:'#2a4270'}},
                 y:{ticks:{color:'#7a9ab8',font:{size:9}},grid:{color:'#2a4270'}}},
-        plugins:{legend:{display:true,position:'bottom',labels:{color:'#7a9ab8',font:{size:11},padding:10}}}}
+        plugins:{legend: dualLegend('bottom', 10)}}
     });
   }
 
@@ -1470,14 +1532,11 @@ function renderCharts(){
     CH['vinc']=new Chart(document.getElementById('c-vinc'),{
       type:'bar',
       data:{labels:entries.map(x=>shortLabel(x[0])),
-            datasets:[
-              { label: 'Vínculos', data: entries.map(x=>x[1].n), backgroundColor: '#9b59b6', borderRadius: 3 },
-              { label: 'CPFs Únicos', data: entries.map(x=>x[1].cpfUnicos), backgroundColor: '#56d364', borderRadius: 3 }
-            ]},
+            datasets: dualDatasets(entries.map(x=>x[1].n), entries.map(x=>x[1].cpfUnicos), '#9b59b6', '#56d364', 3)},
       options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
         scales:{x:{ticks:{color:'#7a9ab8',font:{size:10}},grid:{color:'#2a4270'}},
                 y:{ticks:{color:'#7a9ab8',font:{size:9}},grid:{color:'#2a4270'}}},
-        plugins:{legend:{display:true,position:'bottom',labels:{color:'#7a9ab8',font:{size:11},padding:10}}}}
+        plugins:{legend: dualLegend('bottom', 10)}}
     });
   }
 
@@ -1489,17 +1548,219 @@ function renderCharts(){
     destroyChart('ch');
     CH['ch']=new Chart(document.getElementById('c-ch'),{
       type:'bar',
-      data:{labels,datasets:[
-        { label: 'Vínculos', data: vals, backgroundColor: '#4a90e2', borderRadius: 4 },
-        { label: 'CPFs Únicos', data: cpfVals, backgroundColor: '#56d364', borderRadius: 4 }
-      ]},
+      data:{labels,datasets: dualDatasets(vals, cpfVals, '#4a90e2')},
       options:{responsive:true,maintainAspectRatio:false,
         scales:{x:{ticks:{color:'#7a9ab8',font:{size:11}},grid:{color:'#2a4270'}},
                 y:{ticks:{color:'#7a9ab8',font:{size:11}},grid:{color:'#2a4270'}}},
-        plugins:{legend:{display:true,position:'bottom',labels:{color:'#7a9ab8',font:{size:11},padding:12}}}}
+        plugins:{legend: dualLegend()}}
     });
   }
 
+}
+
+// ==========================================
+// TIPO DE INFORMAÇÃO (Vínculos / CPFs Únicos)
+// ==========================================
+/** Retorna quais séries devem ser exibidas nos gráficos de barra dupla. */
+function tipoInfoSelecionado() {
+  const v = document.getElementById('f-tipo-vinculos')?.checked ?? true;
+  const c = document.getElementById('f-tipo-cpf')?.checked ?? false;
+  // Nunca deixa o gráfico vazio: sem seleção, cai no padrão (Vínculos)
+  return (!v && !c) ? { vinculos: true, cpf: false } : { vinculos: v, cpf: c };
+}
+
+/** Monta os datasets do Chart.js conforme o Tipo de Informação selecionado. */
+function dualDatasets(vinculosVals, cpfVals, corVinculos, corCpf = '#56d364', radius = 4) {
+  const sel = tipoInfoSelecionado();
+  const ds = [];
+  if (sel.vinculos) ds.push({ label: 'Vínculos', data: vinculosVals, backgroundColor: corVinculos, borderRadius: radius });
+  if (sel.cpf)      ds.push({ label: 'CPFs Únicos', data: cpfVals, backgroundColor: corCpf, borderRadius: radius });
+  return ds;
+}
+
+/** Legenda só faz sentido quando as duas séries estão visíveis. */
+function dualLegend(position = 'bottom', padding = 12) {
+  const sel = tipoInfoSelecionado();
+  return { display: sel.vinculos && sel.cpf, position, labels: { color: '#7a9ab8', font: { size: 11 }, padding } };
+}
+
+function onTipoInfoChange() {
+  renderCharts();
+  if (D && D.espelho) renderEspelhoCharts();
+  if (D && D.abordagem) renderAbordagemVinculos();
+}
+
+// ==========================================
+// GRÁFICOS DO ESPELHO (situação, esfera, SUS, geografia)
+// ==========================================
+function renderEspelhoCharts() {
+  if (!D || !D.espelho) return;
+
+  const e = D.espelho;
+  const num = v => parseInt(v) || 0;
+
+  const CORES_SIT = {
+    'Concluído':'#3fb950', 'Em Andamento':'#ff8c42', 'Enviado para Validação':'#f85149',
+    'Devolvido para Correção':'#9b59b6', 'Participação recusada':'#d29922',
+    'Contato sem Sucesso':'#7a9ab8', 'Estabelecimento Inativo':'#4a90e2', 'Não Iniciado':'#6e7681'
+  };
+
+  const barOpts = (horizontal = false, labelFont = 10) => ({
+    indexAxis: horizontal ? 'y' : 'x',
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: dualLegend(),
+      tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${(horizontal ? c.parsed.x : c.parsed.y).toLocaleString('pt-BR')}` } }
+    },
+    scales: {
+      x: { beginAtZero: horizontal, ticks: { color: '#7a9ab8', font: { size: labelFont } }, grid: { color: '#2a4270' } },
+      y: { beginAtZero: !horizontal, ticks: { color: '#7a9ab8', font: { size: labelFont } }, grid: { color: '#2a4270' } }
+    }
+  });
+
+  // Situação do Recenseamento (barras horizontais — rótulos longos)
+  {
+    const rows = [...(e.situacao || [])].sort((a, b) => num(b.quantidade) - num(a.quantidade));
+    destroyChart('esp-situacao');
+    CH['esp-situacao'] = new Chart(document.getElementById('c-esp-situacao'), {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => r.situacao),
+        datasets: dualDatasets(
+          rows.map(r => num(r.quantidade)),
+          rows.map(r => num(r.cpf_unicos)),
+          rows.map(r => CORES_SIT[r.situacao] || '#4a90e2'), '#56d364', 3)
+      },
+      options: barOpts(true, 9)
+    });
+  }
+
+  // Esfera Administrativa
+  {
+    const rows = [...(e.esfera || [])].sort((a, b) => num(b.quantidade) - num(a.quantidade));
+    destroyChart('esp-esfera');
+    CH['esp-esfera'] = new Chart(document.getElementById('c-esp-esfera'), {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => r.esfera),
+        datasets: dualDatasets(rows.map(r => num(r.quantidade)), rows.map(r => num(r.cpf_unicos)), '#20c997')
+      },
+      options: barOpts(false, 10)
+    });
+  }
+
+  // Vínculo com o SUS
+  {
+    const rows = [...(e.sus || [])].sort((a, b) => num(b.quantidade) - num(a.quantidade));
+    const cores = { 'Sim': '#3fb950', 'Não': '#f85149', 'Não informado': '#7a9ab8' };
+    destroyChart('esp-sus');
+    CH['esp-sus'] = new Chart(document.getElementById('c-esp-sus'), {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => r.vinculo_sus),
+        datasets: dualDatasets(
+          rows.map(r => num(r.quantidade)),
+          rows.map(r => num(r.cpf_unicos)),
+          rows.map(r => cores[r.vinculo_sus] || '#4a90e2'))
+      },
+      options: barOpts(false, 11)
+    });
+  }
+
+  // Por UF
+  {
+    const rows = [...(e.uf || [])].sort((a, b) => num(b.quantidade) - num(a.quantidade));
+    destroyChart('esp-uf');
+    CH['esp-uf'] = new Chart(document.getElementById('c-esp-uf'), {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => r.uf),
+        datasets: dualDatasets(rows.map(r => num(r.quantidade)), rows.map(r => num(r.cpf_unicos)), '#9b59b6')
+      },
+      options: barOpts(true, 11)
+    });
+  }
+
+  // Por Macrorregião
+  {
+    const rows = [...(e.macro || [])].sort((a, b) => num(b.quantidade) - num(a.quantidade));
+    destroyChart('esp-macro');
+    CH['esp-macro'] = new Chart(document.getElementById('c-esp-macro'), {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => r.macrorregiao),
+        datasets: dualDatasets(rows.map(r => num(r.quantidade)), rows.map(r => num(r.cpf_unicos)), '#ff7b72', '#56d364', 3)
+      },
+      options: barOpts(true, 9)
+    });
+  }
+
+  // Por Região de Saúde
+  {
+    const rows = [...(e.regional || [])].sort((a, b) => num(b.quantidade) - num(a.quantidade)).slice(0, 20);
+    destroyChart('esp-regional');
+    CH['esp-regional'] = new Chart(document.getElementById('c-esp-regional'), {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => geoLabelVinc(r.sg_uf, r.regional)),
+        datasets: dualDatasets(rows.map(r => num(r.quantidade)), rows.map(r => num(r.cpf_unicos)), '#20c997', '#56d364', 3)
+      },
+      options: barOpts(true, 9)
+    });
+  }
+
+  // Por Município / RAs (Top 20)
+  {
+    const rows = [...(e.municipio || [])].sort((a, b) => num(b.quantidade) - num(a.quantidade)).slice(0, 20);
+    destroyChart('esp-municipio');
+    CH['esp-municipio'] = new Chart(document.getElementById('c-esp-municipio'), {
+      type: 'bar',
+      data: {
+        labels: rows.map(r => geoLabelVinc(r.sg_uf, r.municipio)),
+        datasets: dualDatasets(rows.map(r => num(r.quantidade)), rows.map(r => num(r.cpf_unicos)), '#d29922', '#56d364', 3)
+      },
+      options: barOpts(true, 9)
+    });
+  }
+
+  renderEspelhoProgressoRegional();
+}
+
+/** Evita duplicar o prefixo da UF quando o nome já a contém. */
+function geoLabelVinc(uf, nome) {
+  if (!uf) return nome;
+  if (nome && nome.endsWith(`(${uf})`)) return nome;
+  return `[${uf}] ${nome}`;
+}
+
+/** % Concluído por Regional — barra de progresso; respeita o Tipo de Informação. */
+function renderEspelhoProgressoRegional() {
+  const container = document.getElementById('esp-progress-regional');
+  if (!container || !D || !D.espelho) return;
+
+  const sel = tipoInfoSelecionado();
+  // Com as duas séries marcadas, a base de vínculos manda (métrica principal)
+  const usarCpf = sel.cpf && !sel.vinculos;
+  const num = v => parseInt(v) || 0;
+
+  const rows = (D.espelho.regional || []).map(r => {
+    const total = usarCpf ? num(r.cpf_unicos) : num(r.quantidade);
+    const conc  = usarCpf ? num(r.concluidos_cpf) : num(r.concluidos);
+    return { label: geoLabelVinc(r.sg_uf, r.regional), pct: total > 0 ? (conc / total) * 100 : 0, conc, total };
+  }).sort((a, b) => b.pct - a.pct);
+
+  const unidade = usarCpf ? 'CPFs únicos' : 'vínculos';
+  container.innerHTML = rows.map(r => {
+    const cor = r.pct >= 80 ? '#3fb950' : r.pct >= 50 ? '#d29922' : '#f85149';
+    return `
+      <div class="pitem">
+        <div class="pname" title="${r.label}">${r.label}</div>
+        <div class="pbar"><div class="pfill" style="width:${r.pct}%;background:${cor}"></div></div>
+        <div class="pcount" title="${r.conc.toLocaleString('pt-BR')} de ${r.total.toLocaleString('pt-BR')} ${unidade}">${r.pct.toFixed(1)}%</div>
+      </div>
+    `;
+  }).join('');
 }
 
 // ==========================================
@@ -1518,7 +1779,7 @@ function renderAbordagemVinculos() {
   set('k-nao-abordados', fmt(a.nao_abordados));
   set('k-nao-abordados-pct', pctTotal(a.nao_abordados));
   set('k-abordados', fmt(a.abordados));
-  set('k-abordados-pct', pctTotal(a.abordados));
+  set('k-abordados-pct', `${pctTotal(a.abordados)} · ${fmt(a.abordados_cpf)} CPFs únicos`);
 
   // Label dinâmico do detalhamento (mês/ano atual)
   const labelEl = document.getElementById('label-detalhe-abordados');
@@ -1545,21 +1806,27 @@ function renderAbordagemVinculos() {
     'Contato sem Sucesso':'#7a9ab8', 'Estabelecimento Inativo':'#4a90e2'
   };
   const porSituacao = {};
-  (a.detalhamento || []).forEach(d => { porSituacao[d.situacao] = d.quantidade; });
+  (a.detalhamento || []).forEach(d => { porSituacao[d.situacao] = d; });
 
+  const sel = tipoInfoSelecionado();
   const totalAbordados = a.abordados || 0;
   const pctAbordados = n => totalAbordados > 0 ? ((n / totalAbordados) * 100).toFixed(1) + '% do total' : '—';
 
   const container = document.getElementById('kpi-situacoes-vinc');
   if (container) {
     container.innerHTML = ORDEM.map(({ label, db }) => {
-      const qtd = porSituacao[db] || 0;
+      const row = porSituacao[db] || { quantidade: 0, cpf_unicos: 0 };
       const cor = CORES[label] || '#4a90e2';
+      // Sem "Vínculos" marcado, o card passa a exibir CPFs únicos como valor principal
+      const valor    = sel.vinculos ? row.quantidade : row.cpf_unicos;
+      const subLinha = sel.vinculos
+        ? `${pctAbordados(row.quantidade)}${sel.cpf ? ` · ${fmt(row.cpf_unicos)} CPFs únicos` : ''}`
+        : `${fmt(row.cpf_unicos)} CPFs únicos`;
       return `
         <div class="kpi" style="--ca:${cor}">
           <div class="kpi-lbl">${label}</div>
-          <div class="kpi-val">${fmt(qtd)}</div>
-          <div class="kpi-sub">${pctAbordados(qtd)}</div>
+          <div class="kpi-val">${fmt(valor)}</div>
+          <div class="kpi-sub">${subLinha}</div>
         </div>
       `;
     }).join('');
@@ -1784,8 +2051,6 @@ function renderTable(){
       <td style="font-family:'JetBrains Mono',monospace;color:var(--muted);font-size:11px">${r[15]||'—'}</td>
       <td>${r[4]||''}</td>
       <td>${sexoLabel[r[2]]||r[2]||''}</td>
-      <td style="color:var(--muted);font-size:11px">${r[10]||'—'}</td>
-      <td style="color:var(--muted)">${r[12]||'—'}</td>
       <td style="font-family:'JetBrains Mono',monospace;text-align:right">${r[5]||0}h</td>
       <td>${opBadge(r[7])}</td>
       <td>${cnesBadge(r[9])}</td>

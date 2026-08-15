@@ -40,6 +40,7 @@ const API_CONFIG = {
     VINCULOS_FILTROS: '/api/vinculos/filtros',
     VINCULOS_NAO_ALTERADOS: '/api/vinculos/nao-alterados',
     VINCULOS_ABORDAGEM: '/api/vinculos/abordagem',
+    VINCULOS_AGREGADOS_ESPELHO: '/api/vinculos/agregados-espelho',
     VINCULOS_INDIVIDUO_ADMISSOES:     '/api/vinculos/individuo/admissoes',
     VINCULOS_INDIVIDUO_DESLIGAMENTOS: '/api/vinculos/individuo/desligamentos',
     VINCULOS_INDIVIDUO_ALTERACOES:    '/api/vinculos/individuo/alteracoes',
