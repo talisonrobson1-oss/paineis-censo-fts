@@ -173,7 +173,8 @@ main{padding:24px 32px;max-width:1600px;margin:0 auto;}
 /* KPI */
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:28px;}
 .kpi-grid-linha1{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:16px;}
-.kpi-grid-linha2{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px;}
+.kpi-grid-linha2{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px;}
+.kpi-grid-linha2 .kpi{flex:1 1 calc(25% - 9px);min-width:160px;}
 .kpi-grid-linha3{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:28px;}
 .abord-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(300px,420px);gap:16px;margin-bottom:16px;align-items:stretch;}
 .abord-grid .ccard{display:flex;flex-direction:column;}

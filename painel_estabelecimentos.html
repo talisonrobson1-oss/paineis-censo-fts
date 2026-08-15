@@ -443,7 +443,13 @@
   }
 
   .kpi-row.segunda-linha {
-    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .kpi-row.segunda-linha .kpi-card {
+    flex: 1 1 calc(25% - 9px);
+    min-width: 170px;
   }
 
   .kpi-card {
@@ -882,7 +888,7 @@
           <div class="kpi-value" id="kpi-nao-abordados">—</div>
           <div class="kpi-sub" id="kpi-nao-abordados-pct">—</div>
         </div>
-        <div class="kpi-card kpi-primary" style="--card-accent: var(--accent)">
+        <div class="kpi-card kpi-primary" style="--card-accent: var(--accent2)">
           <div class="kpi-label">Abordados</div>
           <div class="kpi-value" id="kpi-abordados">—</div>
           <div class="kpi-sub" id="kpi-abordados-pct">—</div>
