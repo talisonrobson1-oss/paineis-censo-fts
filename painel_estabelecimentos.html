@@ -418,6 +418,11 @@
     flex-direction: column;
   }
 
+  .abordagem-kpis {
+    display: flex;
+    flex-direction: column;
+  }
+
   .chart-wrap.abordagem {
     flex: 1;
     min-height: 460px;
@@ -445,11 +450,15 @@
   .kpi-row.segunda-linha {
     display: flex;
     flex-wrap: wrap;
+    flex: 1;
   }
 
   .kpi-row.segunda-linha .kpi-card {
     flex: 1 1 calc(25% - 9px);
     min-width: 170px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
   }
 
   .kpi-card {
@@ -875,7 +884,7 @@
 
   <!-- Abordagem: KPIs à esquerda, gráfico de rosca à direita (alinhado da 1ª à última linha) -->
   <div class="abordagem-grid">
-    <div>
+    <div class="abordagem-kpis">
       <!-- Primeira linha: Estabelecimentos, Não Abordados e Abordados -->
       <div class="kpi-row primeira-linha" style="grid-template-columns:1fr 1fr 1fr;">
         <div class="kpi-card kpi-primary" style="--card-accent: var(--accent)">
