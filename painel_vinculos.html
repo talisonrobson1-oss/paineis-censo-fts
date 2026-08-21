@@ -516,19 +516,6 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--muted);border-t
     </div>
   </div>
 
-  <!-- ── Indicadores de CPF distintos por Estabelecimento ── -->
-  <div class="subsec-label">Indicadores de CPF Distintos por Estabelecimento</div>
-  <div class="kpi-grid-linha2" style="margin-bottom:28px;">
-    <div class="kpi destaque" style="--ca:var(--purple)"><div class="kpi-lbl">Profissionais Únicos</div><div class="kpi-val" id="k-prof">—</div><div class="kpi-sub" id="k-prof-sub">por CPF completo</div></div>
-    <div class="kpi" style="--ca:var(--green)"><div class="kpi-lbl">Admissões</div><div class="kpi-val" id="k-admissoes">—</div><div class="kpi-sub" id="k-admissoes-sub">novos no CNES</div><button class="kpi-detail-btn" onclick="openIndividuoModal('admissoes')"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 10L10 2M5 2h5v5"/></svg>Ver</button></div>
-    <div class="kpi" style="--ca:var(--red)"><div class="kpi-lbl">Desligamentos</div><div class="kpi-val" id="k-desligamentos">—</div><div class="kpi-sub" id="k-desligamentos-sub">todos vínculos excluídos</div><button class="kpi-detail-btn" onclick="openIndividuoModal('desligamentos')"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 10L10 2M5 2h5v5"/></svg>Ver</button></div>
-    <div class="kpi" style="--ca:var(--orange)"><div class="kpi-lbl">Alterações de Vínculos</div><div class="kpi-val" id="k-alt-ind">—</div><div class="kpi-sub" id="k-alt-ind-sub">indivíduos com vínculo alterado</div><button class="kpi-detail-btn" onclick="openIndividuoModal('alteracoes')"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 10L10 2M5 2h5v5"/></svg>Ver</button></div>
-    <div class="kpi destaque" style="--ca:var(--yellow)"><div class="kpi-lbl">Média de Carga Horária</div><div class="kpi-val" id="k-ch">—</div><div class="kpi-sub">horas semanais</div></div>
-    <div class="kpi" style="--ca:var(--green)"><div class="kpi-lbl">Alterados pelo Projeto</div><div class="kpi-val" id="k-alterados-projeto">—</div><div class="kpi-sub" id="k-alterados-projeto-sub"></div></div>
-    <div class="kpi" style="--ca:var(--yellow)"><div class="kpi-lbl">Não Alterados</div><div class="kpi-val" id="k-nao-alterados">—</div><div class="kpi-sub" id="k-nao-alterados-sub"></div></div>
-  </div>
-
-
   <!-- Situação do Recenseamento (espelho Abr/2025) -->
   <div class="sec-label">Situação do Recenseamento</div>
   <div class="cgrid3">
@@ -719,11 +706,10 @@ async function loadDataFromAPI() {
     showLoading('Buscando dados agregados...');
     
     // Carregar dados em paralelo
-    const [statsRes, agregadosRes, filtrosRes, naoAlteradosRes, abordagemRes, espelhoRes, filtrosDFRes, filtrosEstabRes] = await Promise.all([
+    const [statsRes, agregadosRes, filtrosRes, abordagemRes, espelhoRes, filtrosDFRes, filtrosEstabRes] = await Promise.all([
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_STATS),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_AGREGADOS),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_FILTROS),
-      apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_NAO_ALTERADOS),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_ABORDAGEM),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_AGREGADOS_ESPELHO),
       apiRequest(API_CONFIG.ENDPOINTS.ESTABELECIMENTOS_FILTROS_DF),
@@ -752,7 +738,6 @@ async function loadDataFromAPI() {
       cbo: {}, // TRANSFORMAR em objeto
       vinculacao: {}, // TRANSFORMAR em objeto
       ch_faixa: {}, // TRANSFORMAR em objeto (nome correto)
-      naoAlterados: naoAlteradosRes.success ? naoAlteradosRes.data : null,
       abordagem: abordagemRes.success ? abordagemRes.data : null,
       espelho: espelhoRes.success ? espelhoRes.data : null,
       table: [] // Será carregado via paginação
@@ -884,7 +869,6 @@ async function loadTableData(pageNum = 1) {
     renderTable();
     
     // Atualizar KPIs (baseado nos dados filtrados se houver filtro ativo)
-    updateKPIs();
     
     console.log(`✅ Tabela carregada: ${filteredTable.length} registros (total: ${result.data.pagination.total})`);
     
@@ -1201,7 +1185,6 @@ function initializePainel() {
   renderCharts();
   
   // Atualizar KPIs
-  updateKPIs();
 
   // Renderizar seção de abordagem (vínculos abordados x não abordados)
   if (D.abordagem) {
@@ -1272,11 +1255,10 @@ async function reloadWithFilters() {
     console.log('🔗 Query string:', queryString || '(nenhum filtro)');
     console.log('📡 Carregando dados filtrados...');
     
-    // Recarregar dados agregados, stats e não-alterados
-    const [statsRes, agregadosRes, naoAlteradosRes, abordagemRes, espelhoRes] = await Promise.all([
+    // Recarregar dados agregados, stats e abordagem
+    const [statsRes, agregadosRes, abordagemRes, espelhoRes] = await Promise.all([
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_STATS + urlSuffix),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_AGREGADOS + urlSuffix),
-      apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_NAO_ALTERADOS + urlSuffix),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_ABORDAGEM + urlSuffix),
       apiRequest(API_CONFIG.ENDPOINTS.VINCULOS_AGREGADOS_ESPELHO + urlSuffix)
     ]);
@@ -1293,7 +1275,6 @@ async function reloadWithFilters() {
 
     console.log('✅ Stats recebidos:', statsRes.data);
     console.log('✅ Agregados recebidos:', agregadosRes.data);
-    console.log('✅ Não-alterados recebidos:', naoAlteradosRes?.data);
 
     if (statsRes.success) {
       D.stats = statsRes.data;
@@ -1316,11 +1297,6 @@ async function reloadWithFilters() {
       data.cargaHoraria.forEach(r => { D.ch_faixa[r.faixa] = { n: parseInt(r.n), cpfUnicos: parseInt(r.cpf_unicos) }; });
     }
     
-    // Atualizar dados de não-alterados
-    if (naoAlteradosRes && naoAlteradosRes.success) {
-      D.naoAlterados = naoAlteradosRes.data;
-    }
-
     // Atualizar dados de abordagem
     if (abordagemRes && abordagemRes.success) {
       D.abordagem = abordagemRes.data;
@@ -1333,7 +1309,6 @@ async function reloadWithFilters() {
 
     // Atualizar UI
     console.log('🎨 Atualizando KPIs e gráficos...');
-    updateKPIs();
     renderCharts();
     if (D.abordagem) renderAbordagemVinculos();
     if (D.espelho) renderEspelhoCharts();
@@ -1382,40 +1357,6 @@ function resetFilters(){
 // ==========================================
 // ATUALIZAR KPIs
 // ==========================================
-function updateKPIs(){
-  if (!D || !D.stats) return;
-
-  const stats = D.stats;
-  const fmt = n => (n || 0).toLocaleString('pt-BR');
-
-  set('k-prof', fmt(stats.total_profissionais));
-  set('k-ch', (stats.media_carga_horaria || 0)+'h');
-
-  // Alterados pelo Projeto / Não Alterados (mesma regra da seção "Vínculos Não Alterados pelo Projeto")
-  if (D.naoAlterados) {
-    const na = D.naoAlterados;
-    const cobertura = na.total_espelho > 0 ? ((na.alterados / na.total_espelho) * 100).toFixed(1) : '0.0';
-    const pctNaoAlt  = (100 - parseFloat(cobertura)).toFixed(1);
-    set('k-alterados-projeto', fmt(na.alterados));
-    set('k-alterados-projeto-sub', `${cobertura}% do total`);
-    set('k-nao-alterados', fmt(na.nao_alterados));
-    set('k-nao-alterados-sub', `${pctNaoAlt}% do total`);
-  }
-
-  // Indicadores de Indivíduos
-  const totalProf = stats.total_profissionais || 1;
-  const pctProf = n => totalProf ? ((n/totalProf)*100).toFixed(1)+'%' : '—';
-
-  set('k-admissoes', fmt(stats.admissoes));
-  set('k-admissoes-sub', pctProf(stats.admissoes)+' dos profissionais');
-
-  set('k-desligamentos', fmt(stats.desligamentos));
-  set('k-desligamentos-sub', pctProf(stats.desligamentos)+' dos profissionais');
-
-  set('k-alt-ind', fmt(stats.alteracoes_individuo));
-  set('k-alt-ind-sub', pctProf(stats.alteracoes_individuo)+' dos profissionais');
-}
-
 function set(id,v){
   const el=document.getElementById(id);
   if(el) el.textContent=v;
@@ -2128,91 +2069,10 @@ function srt(idx){
 
 
 // ==========================================
-// MODAIS DE DETALHE — INDICADORES DE INDIVÍDUOS
-// ==========================================
-const MODAL_CFG = {
-  admissoes: {
-    titulo: 'Admissões — Profissionais novos no CNES',
-    endpoint: '/api/vinculos/individuo/admissoes',
-    cols: ['CPF','Nome','CNES','Estabelecimento'],
-    keys: ['cpf','nome','cnes','estabelecimento']
-  },
-  desligamentos: {
-    titulo: 'Desligamentos — Profissionais com todos os vínculos excluídos',
-    endpoint: '/api/vinculos/individuo/desligamentos',
-    cols: ['CPF','Nome','CNES','Estabelecimento'],
-    keys: ['cpf','nome','cnes','estabelecimento']
-  },
-  alteracoes: {
-    titulo: 'Alterações de Vínculos — Profissionais com vínculo alterado',
-    endpoint: '/api/vinculos/individuo/alteracoes',
-    cols: ['CPF','Nome','CNES','Estabelecimento','CBO','Tipo Vínculo','CH Amb','CH Hosp','CH Out','CH Total'],
-    keys: ['cpf','nome','cnes','estabelecimento','cbo','tipo_vinculo','ch_amb','ch_hosp','ch_out','ch_total']
-  }
-};
-
-async function openIndividuoModal(tipo) {
-  const cfg = MODAL_CFG[tipo];
-  if (!cfg) return;
-  const overlay   = document.getElementById('modal-individuo');
-  const titleEl   = document.getElementById('modal-individuo-title');
-  const loadingEl = document.getElementById('modal-individuo-loading');
-  const contentEl = document.getElementById('modal-individuo-content');
-
-  titleEl.textContent  = cfg.titulo;
-  contentEl.innerHTML  = '';
-  loadingEl.style.display = 'flex';
-  overlay.classList.add('open');
-
-  try {
-    const result = await apiRequest(cfg.endpoint, activeFilters);
-    loadingEl.style.display = 'none';
-    if (!result.success) {
-      contentEl.innerHTML = `<p style="color:var(--red)">Erro ao carregar dados: ${result.error}</p>`;
-      return;
-    }
-    const rows = result.data.data || [];
-    const fmt  = v => (v === null || v === undefined) ? '—' : v;
-    contentEl.innerHTML = `
-      <div class="modal-count">${rows.length.toLocaleString('pt-BR')} registro(s) encontrado(s)</div>
-      <table class="modal-table">
-        <thead><tr>${cfg.cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
-        <tbody>${rows.map(row=>`<tr>${cfg.keys.map(k=>`<td>${fmt(row[k])}</td>`).join('')}</tr>`).join('')}</tbody>
-      </table>`;
-  } catch (err) {
-    loadingEl.style.display = 'none';
-    contentEl.innerHTML = `<p style="color:var(--red)">Erro inesperado: ${err.message}</p>`;
-  }
-}
-
-function closeIndividuoModal() {
-  document.getElementById('modal-individuo').classList.remove('open');
-}
-
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeIndividuoModal();
-});
-
-// ==========================================
 // INICIAR QUANDO PÁGINA CARREGAR
 // ==========================================
 document.addEventListener('DOMContentLoaded', loadDataFromAPI);
 </script>
 
-<!-- Modal de detalhe dos Indicadores de Indivíduos -->
-<div id="modal-individuo" class="modal-overlay" onclick="if(event.target===this)closeIndividuoModal()">
-  <div class="modal-box">
-    <div class="modal-header">
-      <div class="modal-title" id="modal-individuo-title">Detalhe</div>
-      <button class="modal-close" onclick="closeIndividuoModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <div id="modal-individuo-loading" class="modal-loading" style="display:none">
-        <div class="modal-spin"></div><span>Consultando banco de dados...</span>
-      </div>
-      <div id="modal-individuo-content"></div>
-    </div>
-  </div>
-</div>
 </body>
 </html>
