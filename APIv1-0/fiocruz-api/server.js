@@ -1824,12 +1824,13 @@ app.get('/api/vinculos/agregados-espelho', async (req, res) => {
  * situação do recenseamento.
  *
  * Toda a contagem vem do espelho CNES na competência mais antiga disponível
- * (baseline pré-censo, ex.: 202504 / Abril-2025), para que os indicadores
- * representem sempre a mesma foto no tempo:
+ * (baseline pré-censo, ex.: 202504 / Abril-2025), restrita ao universo do
+ * recenseamento, para que os indicadores representem sempre a mesma foto:
  * - "Não Abordados" = vínculos de estabelecimentos com situação 'Não Iniciado'
  * - "Abordados"     = vínculos das demais situações
  * - Detalhamento    = mesmos vínculos, agrupados pelas 7 situações restantes
  *
+ * Total = Não Abordados + Abordados, e o detalhamento soma exatamente Abordados.
  * Cada métrica é retornada em vínculos e em CPFs únicos.
  * Suporta os mesmos filtros de /api/vinculos/nao-alterados.
  */
@@ -1837,46 +1838,42 @@ app.get('/api/vinculos/abordagem', async (req, res) => {
   try {
     const { espelhoWhereExtra, params: finalParams } = buildEspelhoWhere(req.query);
 
-    const totaisSql = `
-      WITH
+    // O JOIN com recenseamento_nova restringe a base ao universo do recenseamento:
+    // ~47 CNES existem no espelho mas nunca entraram no censo, e sem situação não
+    // são "abordados" nem "não abordados" — ficariam fora do detalhamento e
+    // quebrariam a soma dos cards.
+    const espelhoBaseCte = `
       min_comp_cte AS (
         SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova
       ),
       espelho_base AS (
-        SELECT e.co_cnes, e.co_cpf
+        SELECT e.co_cnes, e.co_cpf, rn.situacao_recenseamento
         FROM censo.espelho_cnes_nova e
+        JOIN censo.recenseamento_nova rn ON rn.co_cnes = e.co_cnes
         WHERE e.nu_comp = (SELECT nu_comp FROM min_comp_cte)${espelhoWhereExtra}
-      ),
-      nao_iniciados AS (
-        SELECT co_cnes FROM censo.recenseamento_nova WHERE situacao_recenseamento = 'Não Iniciado'
       )
+    `;
+
+    const totaisSql = `
+      WITH ${espelhoBaseCte}
       SELECT
         (SELECT nu_comp FROM min_comp_cte)  AS nu_comp,
         (SELECT COUNT(*) FROM espelho_base) AS total_abril_base,
         (SELECT COUNT(DISTINCT co_cpf) FROM espelho_base) AS total_abril_base_cpf,
-        (SELECT COUNT(*) FROM espelho_base WHERE co_cnes IN (SELECT co_cnes FROM nao_iniciados)) AS nao_abordados,
-        (SELECT COUNT(DISTINCT co_cpf) FROM espelho_base WHERE co_cnes IN (SELECT co_cnes FROM nao_iniciados)) AS nao_abordados_cpf,
-        (SELECT COUNT(*) FROM espelho_base WHERE co_cnes NOT IN (SELECT co_cnes FROM nao_iniciados)) AS abordados,
-        (SELECT COUNT(DISTINCT co_cpf) FROM espelho_base WHERE co_cnes NOT IN (SELECT co_cnes FROM nao_iniciados)) AS abordados_cpf
+        (SELECT COUNT(*) FROM espelho_base WHERE situacao_recenseamento = 'Não Iniciado') AS nao_abordados,
+        (SELECT COUNT(DISTINCT co_cpf) FROM espelho_base WHERE situacao_recenseamento = 'Não Iniciado') AS nao_abordados_cpf,
+        (SELECT COUNT(*) FROM espelho_base WHERE situacao_recenseamento != 'Não Iniciado') AS abordados,
+        (SELECT COUNT(DISTINCT co_cpf) FROM espelho_base WHERE situacao_recenseamento != 'Não Iniciado') AS abordados_cpf
     `;
 
     const detalhamentoSql = `
-      WITH
-      min_comp_cte AS (
-        SELECT MIN(nu_comp) AS nu_comp FROM censo.espelho_cnes_nova
-      ),
-      espelho_base AS (
-        SELECT e.co_cnes, e.co_cpf
-        FROM censo.espelho_cnes_nova e
-        WHERE e.nu_comp = (SELECT nu_comp FROM min_comp_cte)${espelhoWhereExtra}
-      )
-      SELECT rn.situacao_recenseamento AS situacao,
+      WITH ${espelhoBaseCte}
+      SELECT situacao_recenseamento AS situacao,
              COUNT(*) AS quantidade,
-             COUNT(DISTINCT eb.co_cpf) AS cpf_unicos
-      FROM espelho_base eb
-      JOIN censo.recenseamento_nova rn ON rn.co_cnes = eb.co_cnes
-      WHERE rn.situacao_recenseamento != 'Não Iniciado'
-      GROUP BY rn.situacao_recenseamento
+             COUNT(DISTINCT co_cpf) AS cpf_unicos
+      FROM espelho_base
+      WHERE situacao_recenseamento != 'Não Iniciado'
+      GROUP BY situacao_recenseamento
     `;
 
     const [{ rows: totaisRows }, { rows: detalheRows }] = await Promise.all([
