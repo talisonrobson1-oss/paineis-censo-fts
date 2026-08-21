@@ -1772,12 +1772,12 @@ function renderAbordagemVinculos() {
   const a = D.abordagem;
   const fmt = n => (n || 0).toLocaleString('pt-BR');
   const totalBase = a.total_abril_base || 0;
-  const pctTotal = n => totalBase > 0 ? ((n / totalBase) * 100).toFixed(1) + '% do total' : '—';
+  const pctTotal = n => totalBase > 0 ? ((n / totalBase) * 100).toFixed(1).replace('.', ',') + '% do total' : '—';
 
   set('k-total', fmt(totalBase));
   set('k-total-sub', `Situação em ${a.label || '—'}`);
   set('k-nao-abordados', fmt(a.nao_abordados));
-  set('k-nao-abordados-pct', pctTotal(a.nao_abordados));
+  set('k-nao-abordados-pct', `${pctTotal(a.nao_abordados)} · ${fmt(a.nao_abordados_cpf)} CPFs únicos`);
   set('k-abordados', fmt(a.abordados));
   set('k-abordados-pct', `${pctTotal(a.abordados)} · ${fmt(a.abordados_cpf)} CPFs únicos`);
 
@@ -1845,18 +1845,29 @@ function renderAbordagemChart() {
   const a   = D.abordagem;
   const sel = tipoInfoSelecionado();
   const fmt = n => (n || 0).toLocaleString('pt-BR');
-
-  // Cada tipo de informação selecionado vira um anel: Vínculos por fora,
-  // CPFs Únicos por dentro. Tons mais claros mantêm a leitura de cor por
-  // categoria (Abordados azulado / Não Abordados avermelhado).
-  const series = [];
-  if (sel.vinculos) series.push({ nome: 'Vínculos',    vals: [a.abordados     || 0, a.nao_abordados     || 0], cores: ['#4a90e2', '#f85149'] });
-  if (sel.cpf)      series.push({ nome: 'CPFs Únicos', vals: [a.abordados_cpf || 0, a.nao_abordados_cpf || 0], cores: ['#7fb3ea', '#f98b85'] });
+  const pct = (v, t) => (t > 0 ? ((v / t) * 100).toFixed(1) : '0').replace('.', ',');
 
   const labels  = ['Abordados', 'Não Abordados'];
-  const multi   = series.length > 1;
-  const totalDe = s => s.vals.reduce((x, y) => x + y, 0);
-  const pctDe   = (s, i) => { const t = totalDe(s); return (t > 0 ? ((s.vals[i] / t) * 100).toFixed(1) : '0').replace('.', ','); };
+  const vinc    = [a.abordados     || 0, a.nao_abordados     || 0];
+  const cpf     = [a.abordados_cpf || 0, a.nao_abordados_cpf || 0];
+  const somaV   = vinc.reduce((x, y) => x + y, 0);
+  const somaC   = cpf.reduce((x, y) => x + y, 0);
+  const coresV  = ['#4a90e2', '#f85149'];
+  const coresC  = ['#7fb3ea', '#f98b85'];
+
+  // O Tipo de Informação controla os anéis desenhados (Vínculos por fora,
+  // CPFs Únicos por dentro em tom mais claro); a legenda mostra sempre as
+  // duas métricas, para acompanhar os cards logo ao lado.
+  const series = [];
+  if (sel.vinculos) series.push({ vals: vinc, cores: coresV, nome: 'Vínculos' });
+  if (sel.cpf)      series.push({ vals: cpf,  cores: coresC, nome: 'CPFs Únicos' });
+
+  // Em telas estreitas a linha combinada (~360px) vazaria do canvas, então
+  // as métricas viram entradas separadas, cada uma bem mais curta.
+  const larguraDisponivel = (ctx.parentElement || ctx).getBoundingClientRect().width || 0;
+  const compacto = larguraDisponivel > 0 && larguraDisponivel < 560;
+
+  const entrada = (texto, cor) => ({ text: texto, fillStyle: cor, strokeStyle: cor, lineWidth: 0 });
 
   CH['abordagem'] = new Chart(ctx, {
     type: 'doughnut',
@@ -1873,7 +1884,7 @@ function renderAbordagemChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      cutout: multi ? '40%' : '62%',
+      cutout: series.length > 1 ? '40%' : '62%',
       plugins: {
         legend: {
           position: 'bottom',
@@ -1881,21 +1892,23 @@ function renderAbordagemChart() {
           labels: {
             color: '#7a9ab8', font: { size: 11 }, padding: 10,
             boxWidth: 12, boxHeight: 12,
-            generateLabels: () => series.flatMap(s =>
-              labels.map((lbl, i) => ({
-                text: `${multi ? s.nome + ' · ' : ''}${lbl} — ${fmt(s.vals[i])} (${pctDe(s, i)}%)`,
-                fillStyle: s.cores[i],
-                strokeStyle: s.cores[i],
-                lineWidth: 0
-              }))
-            )
+            generateLabels: () => compacto
+              ? labels.flatMap((lbl, i) => [
+                  entrada(`${lbl} — ${fmt(vinc[i])} vínculos (${pct(vinc[i], somaV)}%)`,    coresV[i]),
+                  entrada(`${lbl} — ${fmt(cpf[i])} CPFs únicos (${pct(cpf[i], somaC)}%)`,   coresC[i])
+                ])
+              : labels.map((lbl, i) => entrada(
+                  `${lbl} — ${fmt(vinc[i])} vínculos (${pct(vinc[i], somaV)}%) · ${fmt(cpf[i])} CPFs únicos (${pct(cpf[i], somaC)}%)`,
+                  coresV[i]
+                ))
           }
         },
         tooltip: {
           callbacks: {
             label: c => {
               const s = series[c.datasetIndex];
-              return ` ${multi ? s.nome + ' · ' : ''}${c.label}: ${fmt(c.parsed)} (${pctDe(s, c.dataIndex)}%)`;
+              const t = s.vals.reduce((x, y) => x + y, 0);
+              return ` ${s.nome} · ${c.label}: ${fmt(c.parsed)} (${pct(c.parsed, t)}%)`;
             }
           }
         }
