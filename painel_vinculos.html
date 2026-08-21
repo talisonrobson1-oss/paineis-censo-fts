@@ -1788,27 +1788,16 @@ function renderAbordagemChart() {
   const fmt = n => (n || 0).toLocaleString('pt-BR');
   const pct = (v, t) => (t > 0 ? ((v / t) * 100).toFixed(1) : '0').replace('.', ',');
 
-  const labels  = ['Abordados', 'Não Abordados'];
-  const vinc    = [a.abordados     || 0, a.nao_abordados     || 0];
-  const cpf     = [a.abordados_cpf || 0, a.nao_abordados_cpf || 0];
-  const somaV   = vinc.reduce((x, y) => x + y, 0);
-  const somaC   = cpf.reduce((x, y) => x + y, 0);
-  const coresV  = ['#4a90e2', '#f85149'];
-  const coresC  = ['#7fb3ea', '#f98b85'];
+  const labels = ['Abordados', 'Não Abordados'];
 
-  // O Tipo de Informação controla os anéis desenhados (Vínculos por fora,
-  // CPFs Únicos por dentro em tom mais claro); a legenda mostra sempre as
-  // duas métricas, para acompanhar os cards logo ao lado.
+  // O Tipo de Informação define os anéis e a legenda, como nos demais
+  // gráficos: Vínculos por fora, CPFs Únicos por dentro em tom mais claro.
   const series = [];
-  if (sel.vinculos) series.push({ vals: vinc, cores: coresV, nome: 'Vínculos' });
-  if (sel.cpf)      series.push({ vals: cpf,  cores: coresC, nome: 'CPFs Únicos' });
+  if (sel.vinculos) series.push({ nome: 'Vínculos',    unidade: 'vínculos',    vals: [a.abordados     || 0, a.nao_abordados     || 0], cores: ['#4a90e2', '#f85149'] });
+  if (sel.cpf)      series.push({ nome: 'CPFs Únicos', unidade: 'CPFs únicos', vals: [a.abordados_cpf || 0, a.nao_abordados_cpf || 0], cores: ['#7fb3ea', '#f98b85'] });
 
-  // Em telas estreitas a linha combinada (~360px) vazaria do canvas, então
-  // as métricas viram entradas separadas, cada uma bem mais curta.
-  const larguraDisponivel = (ctx.parentElement || ctx).getBoundingClientRect().width || 0;
-  const compacto = larguraDisponivel > 0 && larguraDisponivel < 560;
-
-  const entrada = (texto, cor) => ({ text: texto, fillStyle: cor, strokeStyle: cor, lineWidth: 0 });
+  const multi = series.length > 1;
+  const somaDe = s => s.vals.reduce((x, y) => x + y, 0);
 
   CH['abordagem'] = new Chart(ctx, {
     type: 'doughnut',
@@ -1825,7 +1814,7 @@ function renderAbordagemChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      cutout: series.length > 1 ? '40%' : '62%',
+      cutout: multi ? '40%' : '62%',
       plugins: {
         legend: {
           position: 'bottom',
@@ -1833,23 +1822,26 @@ function renderAbordagemChart() {
           labels: {
             color: '#7a9ab8', font: { size: 11 }, padding: 10,
             boxWidth: 12, boxHeight: 12,
-            generateLabels: () => compacto
-              ? labels.flatMap((lbl, i) => [
-                  entrada(`${lbl} — ${fmt(vinc[i])} vínculos (${pct(vinc[i], somaV)}%)`,    coresV[i]),
-                  entrada(`${lbl} — ${fmt(cpf[i])} CPFs únicos (${pct(cpf[i], somaC)}%)`,   coresC[i])
-                ])
-              : labels.map((lbl, i) => entrada(
-                  `${lbl} — ${fmt(vinc[i])} vínculos (${pct(vinc[i], somaV)}%) · ${fmt(cpf[i])} CPFs únicos (${pct(cpf[i], somaC)}%)`,
-                  coresV[i]
-                ))
+            // Com as duas séries, o nome vem como prefixo; com uma só, a
+            // unidade vai junto do número para não deixar dúvida da métrica.
+            generateLabels: () => series.flatMap(s => {
+              const t = somaDe(s);
+              return labels.map((lbl, i) => ({
+                text: multi
+                  ? `${s.nome} · ${lbl} — ${fmt(s.vals[i])} (${pct(s.vals[i], t)}%)`
+                  : `${lbl} — ${fmt(s.vals[i])} ${s.unidade} (${pct(s.vals[i], t)}%)`,
+                fillStyle: s.cores[i],
+                strokeStyle: s.cores[i],
+                lineWidth: 0
+              }));
+            })
           }
         },
         tooltip: {
           callbacks: {
             label: c => {
               const s = series[c.datasetIndex];
-              const t = s.vals.reduce((x, y) => x + y, 0);
-              return ` ${s.nome} · ${c.label}: ${fmt(c.parsed)} (${pct(c.parsed, t)}%)`;
+              return ` ${multi ? s.nome + ' · ' : ''}${c.label}: ${fmt(c.parsed)} (${pct(c.parsed, somaDe(s))}%)`;
             }
           }
         }
