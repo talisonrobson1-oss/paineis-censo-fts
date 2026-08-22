@@ -1820,7 +1820,9 @@ function renderAbordagemChart() {
           position: 'bottom',
           onClick: () => {},  // legenda aqui é informativa: exibe os valores
           labels: {
-            color: '#7a9ab8', font: { size: 11 }, padding: 10,
+            // --text (e nao --muted como nos demais graficos): a legenda aqui
+            // carrega os valores, entao precisa do contraste do texto principal
+            color: '#dce8f4', font: { size: 11 }, padding: 10,
             boxWidth: 12, boxHeight: 12,
             // Com as duas séries, o nome vem como prefixo; com uma só, a
             // unidade vai junto do número para não deixar dúvida da métrica.
