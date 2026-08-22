@@ -1787,6 +1787,7 @@ function renderAbordagemChart() {
   const sel = tipoInfoSelecionado();
   const fmt = n => (n || 0).toLocaleString('pt-BR');
   const pct = (v, t) => (t > 0 ? ((v / t) * 100).toFixed(1) : '0').replace('.', ',');
+  const COR_LEGENDA = '#dce8f4';   // --text
 
   const labels = ['Abordados', 'Não Abordados'];
 
@@ -1822,7 +1823,7 @@ function renderAbordagemChart() {
           labels: {
             // --text (e nao --muted como nos demais graficos): a legenda aqui
             // carrega os valores, entao precisa do contraste do texto principal
-            color: '#dce8f4', font: { size: 11 }, padding: 10,
+            color: COR_LEGENDA, font: { size: 11 }, padding: 10,
             boxWidth: 12, boxHeight: 12,
             // Com as duas séries, o nome vem como prefixo; com uma só, a
             // unidade vai junto do número para não deixar dúvida da métrica.
@@ -1834,7 +1835,8 @@ function renderAbordagemChart() {
                   : `${lbl} — ${fmt(s.vals[i])} ${s.unidade} (${pct(s.vals[i], t)}%)`,
                 fillStyle: s.cores[i],
                 strokeStyle: s.cores[i],
-                lineWidth: 0
+                lineWidth: 0,
+                fontColor: COR_LEGENDA
               }));
             })
           }
